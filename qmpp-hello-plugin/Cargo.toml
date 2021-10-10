@@ -1,0 +1,15 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "qmpp-hello-plugin"
+version = "0.1.0"
+authors = ["seth <rader.seth@gmail.com>"]
+edition = "2018"
+forced-target = "wasm32-unknown-unknown"
+
+[lib]
+name = "hello"
+crate-type = ["cdylib"]
+
+[dependencies]
+wee_alloc = "^0.4"
