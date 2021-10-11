@@ -2,8 +2,8 @@ use wasmer::{
     imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
 };
 
-use crate::stub_import;
 use super::common::{log_error, log_info, recv_bytes, PluginEnv};
+use crate::stub_import;
 
 #[derive(WasmerEnv, Clone)]
 struct InitEnv {

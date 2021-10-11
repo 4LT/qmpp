@@ -8,10 +8,10 @@ use wasmer::{
 
 use quake_util::qmap::QuakeMap;
 
-use crate::stub_import;
 use super::common::{
     log_error, log_info, recv_c_string, send_bytes, PluginEnv,
 };
+use crate::stub_import;
 
 #[derive(WasmerEnv, Clone)]
 struct ProcessEnv {

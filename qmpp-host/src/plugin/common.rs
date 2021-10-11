@@ -6,19 +6,12 @@ use wasmer::WasmerEnv;
 
 use wasmer::{Memory, MemoryView};
 
-
 #[macro_export]
 macro_rules! stub_error {
     ( $fun:expr, $ctx:expr ) => {
-        wasmer::RuntimeError::raise(
-            $crate::plugin::common::ImportError::boxed(
-                format!(
-                    "\"{}\" not implemented for context \"{}\"",
-                    $fun,
-                    $ctx
-                )
-            )
-        )
+        wasmer::RuntimeError::raise($crate::plugin::common::ImportError::boxed(
+            format!("\"{}\" not implemented for context \"{}\"", $fun, $ctx),
+        ))
     };
 }
 
@@ -76,13 +69,13 @@ pub enum TransferError {
 
 #[derive(Debug)]
 pub struct ImportError {
-    msg: String
+    msg: String,
 }
 
 impl ImportError {
     pub fn new(msg: impl Display) -> Self {
         Self {
-            msg: format!("{}", msg)
+            msg: format!("{}", msg),
         }
     }
 
@@ -94,7 +87,7 @@ impl ImportError {
 impl Display for ImportError {
     fn fmt(
         &self,
-        f: &mut std::fmt::Formatter<'_>
+        f: &mut std::fmt::Formatter<'_>,
     ) -> Result<(), std::fmt::Error> {
         write!(f, "{}", self.msg)?;
         Ok(())
