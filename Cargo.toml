@@ -1,5 +1,6 @@
 [workspace]
-members = ["qmpp-host", "qmpp-hello-plugin"]
+members = ["qmpp-host", "qmpp-hello-plugin", "qmpp-shared"]
 
 [patch.crates-io]
 quake-util = { path = "../quake-util" }
+qmpp-shared = { path = "./qmpp-shared" }

@@ -1,12 +1,7 @@
 [package]
-name = "qmpp-host"
+name = "qmpp-shared"
 version = "0.1.0"
-authors = ["seth <rader.seth@gmail.com>"]
 edition = "2018"
+authors = ["seth <rader.seth@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-wasmer = "^2.0"
-quake-util = "^0.1"
-qmpp-shared = "^0.1"
