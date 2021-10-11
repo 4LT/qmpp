@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -11,7 +12,7 @@ use quake_util::qmap::QuakeMap;
 use super::common::{
     log_error, log_info, recv_c_string, send_bytes, PluginEnv,
 };
-use crate::stub_import;
+use crate::{abort_plugin, stub_import};
 
 #[derive(WasmerEnv, Clone)]
 struct ProcessEnv {
@@ -138,7 +139,11 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
 }
 
 fn entity_count(env: &ProcessEnv) -> u32 {
-    env.map.entities.len() as u32
+    if let Ok(ct) = env.map.entities.len().try_into() {
+        ct
+    } else {
+        abort_plugin!("Too many entities (> ~4B)");
+    }
 }
 
 fn keyvalue_init_read(
@@ -153,14 +158,14 @@ fn keyvalue_init_read(
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
         None => {
-            return qmpp_shared::ERROR_EHANDLE;
+            abort_plugin!("Entity handle out of bounds");
         }
     };
 
     let key = match recv_c_string(mem, key_ptr) {
         Ok(key) => key,
         Err(_) => {
-            return qmpp_shared::ERROR_KEY_TRANSFER;
+            abort_plugin!("Key pointer out of bounds");
         }
     };
 
@@ -175,33 +180,35 @@ fn keyvalue_init_read(
     let size_bytes = &match u32::try_from(value_bytes.len()) {
         Ok(size) => size.to_le_bytes(),
         Err(_) => {
-            return qmpp_shared::ERROR_SIZE_TRANSFER;
+            abort_plugin!("Attempt to send too many bytes to plugin");
         }
     };
 
     match send_bytes(mem, size_ptr, size_bytes) {
         Ok(_) => match kvrt.open(value.to_bytes_with_nul()) {
             Ok(_) => qmpp_shared::SUCCESS,
-            Err(_) => qmpp_shared::ERROR_BAD_INIT,
+            Err(_) => abort_plugin!("Key-value read transaction already open"),
         },
-        Err(_) => qmpp_shared::ERROR_SIZE_TRANSFER,
+        Err(_) => abort_plugin!("Failed to send size to plugin"),
     }
 }
 
-fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) -> u32 {
+fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     let mem = env.memory.get_ref().unwrap();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
     let payload = match kvrt.close() {
         Ok(value_vec) => value_vec,
         Err(_) => {
-            return qmpp_shared::ERROR_BAD_READ;
+            abort_plugin!("Key-value read transaction is closed");
         }
     };
 
-    match send_bytes(mem, val_ptr, &payload[..]) {
-        Ok(_) => qmpp_shared::SUCCESS,
-        Err(_) => qmpp_shared::ERROR_VALUE_TRANSFER,
+    if let Err(_) = send_bytes(mem, val_ptr, &payload[..]) {
+        abort_plugin!(
+            "Failed to send value with {} bytes to plugin",
+            payload.len()
+        )
     }
 }
 

@@ -35,18 +35,18 @@ pub extern "C" fn QMPP_Hook_process() {
     let key = b"message\0".to_vec();
     let mut value_buffer = Vec::<u8>::new();
     let mut value_size = MaybeUninit::<usize>::uninit();
-    let mut status = unsafe {
+
+    let status = unsafe {
         QMPP_keyvalue_init_read(0usize, key.as_ptr(), value_size.as_mut_ptr())
     };
 
     if status == qmpp_shared::SUCCESS {
         let value_size = unsafe { value_size.assume_init() };
         value_buffer.reserve(value_size);
-        status = unsafe { QMPP_keyvalue_read(value_buffer.as_mut_ptr()) };
-    }
 
-    if status == qmpp_shared::SUCCESS {
-        let value_size = unsafe { value_size.assume_init() };
+        unsafe {
+            QMPP_keyvalue_read(value_buffer.as_mut_ptr())
+        };
 
         unsafe {
             value_buffer.set_len(value_size);
@@ -68,18 +68,8 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     } else {
         let mesg = String::from(match status {
-            qmpp_shared::ERROR_EHANDLE => "Entity handle out of bounds",
-            qmpp_shared::ERROR_KEY_TRANSFER => {
-                "Failed to receive key from plugin"
-            }
             qmpp_shared::ERROR_KEY_LOOKUP => "Key not found in entity",
-            qmpp_shared::ERROR_SIZE_TRANSFER => "Failed to send size to plugin",
-            qmpp_shared::ERROR_VALUE_TRANSFER => {
-                "Failed to send value to plugin"
-            }
-            qmpp_shared::ERROR_BAD_INIT => "Illegal state for init operation",
-            qmpp_shared::ERROR_BAD_READ => "Illegal state for read operation",
-            _ => "Unknown status",
+            _ => "Unknown status"
         });
 
         unsafe {
@@ -105,7 +95,7 @@ extern "C" {
         key_ptr: *const u8,
         size_ptr: *mut usize,
     ) -> u32;
-    pub fn QMPP_keyvalue_read(val_ptr: *mut u8) -> u32;
+    pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
     pub fn QMPP_brush_count(ehandle: usize, size_ptr: *mut usize) -> u32;
 }

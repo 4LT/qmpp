@@ -1,17 +1,31 @@
 use std::ffi::CString;
 use std::fmt::Display;
-//use std::fmt::Display;
 
 use wasmer::WasmerEnv;
 
 use wasmer::{Memory, MemoryView};
 
 #[macro_export]
+macro_rules! abort_plugin {
+    ( $fmt:literal $(, $( $arg:expr ),* )? ) => {
+        {
+            wasmer::RuntimeError::raise(
+                $crate::plugin::common::ImportError::boxed(
+                    format!($fmt $(, $( $arg ),* )?)
+                )
+            )
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! stub_error {
     ( $fun:expr, $ctx:expr ) => {
-        wasmer::RuntimeError::raise($crate::plugin::common::ImportError::boxed(
-            format!("\"{}\" not implemented for context \"{}\"", $fun, $ctx),
-        ))
+        $crate::abort_plugin!(
+            "\"{}\" not implemented for context \"{}\"",
+            $fun,
+            $ctx
+        )
     };
 }
 

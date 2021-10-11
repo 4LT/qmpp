@@ -3,7 +3,7 @@ use wasmer::{
 };
 
 use super::common::{log_error, log_info, recv_bytes, PluginEnv};
-use crate::stub_import;
+use crate::{abort_plugin, stub_import};
 
 #[derive(WasmerEnv, Clone)]
 struct InitEnv {
@@ -66,7 +66,6 @@ pub fn init(module: &Module) {
                     "QMPP_keyvalue_read",
                     "init",
                     u32,
-                    u32,
                 )
             ),
         }
@@ -84,8 +83,8 @@ fn register(env: &InitEnv, name_len: u32, name_ptr: u32) {
             Result::Ok(plugin_name) => {
                 println!("Registered plugin '{}'", plugin_name,)
             }
-            Result::Err(_) => eprintln!("Invalid UTF-8 in plugin name"),
+            Result::Err(_) => abort_plugin!("Invalid UTF-8 in plugin name"),
         },
-        Result::Err(_) => eprintln!("Error while receiving bytes"),
+        Result::Err(_) => abort_plugin!("Error while receiving bytes"),
     }
 }
