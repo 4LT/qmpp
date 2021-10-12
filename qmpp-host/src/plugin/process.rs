@@ -7,7 +7,7 @@ use wasmer::{
     imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
 };
 
-use quake_util::qmap::QuakeMap;
+use quake_util::qmap::{Entity, QuakeMap};
 
 use super::common::{
     log_error, log_info, recv_c_string, send_bytes, PluginEnv,
@@ -118,17 +118,15 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
             ),
             "QMPP_keyvalue_read" => Function::new_native_with_env(
                 module.store(),
-                process_env,
+                process_env.clone(),
                 keyvalue_read
             ),
 
-            /*
             "QMPP_brush_count" => Function::new_native_with_env(
-                &store,
+                module.store(),
                 process_env,
                 brush_count
             )
-            */
         }
     };
 
@@ -136,6 +134,10 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
 
     let process = instance.exports.get_function("QMPP_Hook_process").unwrap();
     process.call(&[]).unwrap();
+}
+
+fn ehandle_oob(ehandle: u32) -> ! {
+    abort_plugin!("Entity handle {} out of bounds", ehandle)
 }
 
 fn entity_count(env: &ProcessEnv) -> u32 {
@@ -157,9 +159,7 @@ fn keyvalue_init_read(
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => {
-            abort_plugin!("Entity handle out of bounds");
-        }
+        None => ehandle_oob(ehandle),
     };
 
     let key = match recv_c_string(mem, key_ptr) {
@@ -212,19 +212,14 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     }
 }
 
-/*
 fn brush_count(env: &ProcessEnv, ehandle: u32) -> u32 {
-    let success = 0u32;
-    let error_ehandle = 1u32;
-
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => {
-            return error_ehandle;
-        }
+        None => ehandle_oob(ehandle),
     };
 
     match entity {
         Entity::Brush(_, brushes) => brushes.len() as u32,
-        Entity::Point(
-}*/
+        Entity::Point(_) => 0u32,
+    }
+}

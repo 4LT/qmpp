@@ -77,10 +77,15 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
+    let brush_ct = unsafe {
+        QMPP_brush_count(0usize)
+    };
+
+    let mesg = format!("Worldspawn has {} brushes", brush_ct);
+
     unsafe {
-        let name = "this/will/fail";
-        QMPP_register(name.len(), name.as_ptr());
-    }
+        QMPP_log_info(mesg.len(), mesg.as_ptr());
+    };
 }
 
 #[allow(non_snake_case)]
@@ -97,7 +102,7 @@ extern "C" {
     ) -> u32;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    pub fn QMPP_brush_count(ehandle: usize, size_ptr: *mut usize) -> u32;
+    pub fn QMPP_brush_count(ehandle: usize) -> u32;
 }
 
 #[panic_handler]

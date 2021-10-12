@@ -68,6 +68,15 @@ pub fn init(module: &Module) {
                     u32,
                 )
             ),
+            "QMPP_brush_count" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_brush_count",
+                    "init",
+                    u32,
+                    u32,
+                )
+            )
         }
     };
 
