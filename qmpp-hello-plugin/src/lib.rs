@@ -44,9 +44,7 @@ pub extern "C" fn QMPP_Hook_process() {
         let value_size = unsafe { value_size.assume_init() };
         value_buffer.reserve(value_size);
 
-        unsafe {
-            QMPP_keyvalue_read(value_buffer.as_mut_ptr())
-        };
+        unsafe { QMPP_keyvalue_read(value_buffer.as_mut_ptr()) };
 
         unsafe {
             value_buffer.set_len(value_size);
@@ -69,7 +67,7 @@ pub extern "C" fn QMPP_Hook_process() {
     } else {
         let mesg = String::from(match status {
             qmpp_shared::ERROR_KEY_LOOKUP => "Key not found in entity",
-            _ => "Unknown status"
+            _ => "Unknown status",
         });
 
         unsafe {
@@ -77,9 +75,7 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
-    let brush_ct = unsafe {
-        QMPP_brush_count(0usize)
-    };
+    let brush_ct = unsafe { QMPP_brush_count(0usize) };
 
     let mesg = format!("Worldspawn has {} brushes", brush_ct);
 
