@@ -75,7 +75,7 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
-    let brush_ct = unsafe { QMPP_brush_count(0usize) };
+    let brush_ct = unsafe { QMPP_brush_count(0u32) };
 
     let mesg = format!("Worldspawn has {} brushes", brush_ct);
 
@@ -88,7 +88,7 @@ pub extern "C" fn QMPP_Hook_process() {
     unsafe {
         QMPP_log_info(mesg.len(), mesg.as_ptr());
     };
-    
+
     let targetname_key = b"targetname\0".to_vec();
 
     (0..entity_ct).for_each(|ehandle| {
@@ -96,7 +96,7 @@ pub extern "C" fn QMPP_Hook_process() {
             QMPP_keyvalue_init_read(
                 ehandle,
                 targetname_key.as_ptr(),
-                value_size.as_mut_ptr()
+                value_size.as_mut_ptr(),
             )
         };
 
@@ -112,8 +112,9 @@ pub extern "C" fn QMPP_Hook_process() {
                     .iter()
                     .copied()
                     .take_while(|&ch| ch != 0u8)
-                    .collect::<Vec<u8>>()
-            ).unwrap();
+                    .collect::<Vec<u8>>(),
+            )
+            .unwrap();
 
             unsafe {
                 QMPP_log_info(value.len(), value.as_ptr());
@@ -136,7 +137,7 @@ extern "C" {
     ) -> u32;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    pub fn QMPP_brush_count(ehandle: usize) -> u32;
+    pub fn QMPP_brush_count(ehandle: u32) -> u32;
 }
 
 #[panic_handler]
