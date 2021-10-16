@@ -37,7 +37,7 @@ pub extern "C" fn QMPP_Hook_process() {
     let mut value_size = MaybeUninit::<usize>::uninit();
 
     let status = unsafe {
-        QMPP_keyvalue_init_read(0usize, key.as_ptr(), value_size.as_mut_ptr())
+        QMPP_keyvalue_init_read(0u32, key.as_ptr(), value_size.as_mut_ptr())
     };
 
     if status == qmpp_shared::SUCCESS {
@@ -82,6 +82,44 @@ pub extern "C" fn QMPP_Hook_process() {
     unsafe {
         QMPP_log_info(mesg.len(), mesg.as_ptr());
     };
+
+    let mesg = String::from("Targetnames:");
+
+    unsafe {
+        QMPP_log_info(mesg.len(), mesg.as_ptr());
+    };
+    
+    let targetname_key = b"targetname\0".to_vec();
+
+    (0..entity_ct).for_each(|ehandle| {
+        let status = unsafe {
+            QMPP_keyvalue_init_read(
+                ehandle,
+                targetname_key.as_ptr(),
+                value_size.as_mut_ptr()
+            )
+        };
+
+        if status == qmpp_shared::SUCCESS {
+            let value_size = unsafe { value_size.assume_init() };
+            let mut value_buffer = Vec::<u8>::new();
+            value_buffer.reserve(value_size);
+            unsafe { QMPP_keyvalue_read(value_buffer.as_mut_ptr()) };
+            unsafe { value_buffer.set_len(value_size) };
+
+            let value = String::from_utf8(
+                value_buffer
+                    .iter()
+                    .copied()
+                    .take_while(|&ch| ch != 0u8)
+                    .collect::<Vec<u8>>()
+            ).unwrap();
+
+            unsafe {
+                QMPP_log_info(value.len(), value.as_ptr());
+            }
+        }
+    });
 }
 
 #[allow(non_snake_case)]
@@ -92,7 +130,7 @@ extern "C" {
     pub fn QMPP_log_error(mesg_len: usize, mesg_ptr: *const u8);
 
     pub fn QMPP_keyvalue_init_read(
-        ehandle: usize,
+        ehandle: u32,
         key_ptr: *const u8,
         size_ptr: *mut usize,
     ) -> u32;
