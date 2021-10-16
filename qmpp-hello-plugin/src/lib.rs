@@ -26,7 +26,7 @@ pub extern "C" fn QMPP_Hook_init() {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub extern "C" fn QMPP_Hook_process() {
-    let entity_ct = unsafe { QMPP_entity_count() };
+    let entity_ct = unsafe { QMPP_ehandle_count() };
     let mesg = format!("Found {} entities", entity_ct);
     unsafe {
         QMPP_log_info(mesg.len(), mesg.as_ptr());
@@ -66,6 +66,7 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     } else {
         let mesg = String::from(match status {
+            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
             qmpp_shared::ERROR_KEY_LOOKUP => "Key not found in entity",
             _ => "Unknown status",
         });
@@ -75,13 +76,28 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
-    let brush_ct = unsafe { QMPP_brush_count(0u32) };
+    let mut brush_ct = MaybeUninit::<u32>::uninit();
 
-    let mesg = format!("Worldspawn has {} brushes", brush_ct);
+    let status = unsafe { QMPP_bhandle_count(0u32, brush_ct.as_mut_ptr()) };
 
-    unsafe {
-        QMPP_log_info(mesg.len(), mesg.as_ptr());
-    };
+    if status == qmpp_shared::SUCCESS {
+        let brush_ct = unsafe { brush_ct.assume_init() };
+
+        let mesg = format!("Worldspawn has {} brushes", brush_ct);
+
+        unsafe {
+            QMPP_log_info(mesg.len(), mesg.as_ptr());
+        };
+    } else {
+        let mesg = String::from(match status {
+            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
+            _ => "Unknown status",
+        });
+
+        unsafe {
+            QMPP_log_error(mesg.len(), mesg.as_ptr());
+        }
+    }
 
     let mesg = String::from("Targetnames:");
 
@@ -126,7 +142,7 @@ pub extern "C" fn QMPP_Hook_process() {
 #[allow(non_snake_case)]
 extern "C" {
     pub fn QMPP_register(name_len: usize, name_ptr: *const u8);
-    pub fn QMPP_entity_count() -> u32;
+    pub fn QMPP_ehandle_count() -> u32;
     pub fn QMPP_log_info(mesg_len: usize, mesg_ptr: *const u8);
     pub fn QMPP_log_error(mesg_len: usize, mesg_ptr: *const u8);
 
@@ -137,7 +153,7 @@ extern "C" {
     ) -> u32;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    pub fn QMPP_brush_count(ehandle: u32) -> u32;
+    pub fn QMPP_bhandle_count(ehandle: u32, brush_ct_ptr: *mut u32) -> u32;
 }
 
 #[panic_handler]
