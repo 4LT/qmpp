@@ -47,7 +47,7 @@ pub fn init(module: &Module) {
                 log_error
             ),
 
-            "QMPP_entity_count" => Function::new_native(
+            "QMPP_ehandle_count" => Function::new_native(
                 module.store(),
                 stub_import!("QMPP_entity_count", "init", (), u32)
             ),
@@ -68,12 +68,12 @@ pub fn init(module: &Module) {
                     u32,
                 )
             ),
-            "QMPP_brush_count" => Function::new_native(
+            "QMPP_bhandle_count" => Function::new_native(
                 module.store(),
                 stub_import!(
                     "QMPP_brush_count",
                     "init",
-                    u32,
+                    (u32, u32),
                     u32,
                 )
             )

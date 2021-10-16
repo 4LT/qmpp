@@ -95,10 +95,10 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
                 )
             ),
 
-            "QMPP_entity_count" => Function::new_native_with_env(
+            "QMPP_ehandle_count" => Function::new_native_with_env(
                 module.store(),
                 process_env.clone(),
-                entity_count
+                ehandle_count
             ),
             "QMPP_log_info" => Function::new_native_with_env(
                 module.store(),
@@ -122,10 +122,10 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
                 keyvalue_read
             ),
 
-            "QMPP_brush_count" => Function::new_native_with_env(
+            "QMPP_bhandle_count" => Function::new_native_with_env(
                 module.store(),
                 process_env,
-                brush_count
+                bhandle_count
             )
         }
     };
@@ -136,11 +136,7 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
     process.call(&[]).unwrap();
 }
 
-fn ehandle_oob(ehandle: u32) -> ! {
-    abort_plugin!("Entity handle {} out of bounds", ehandle)
-}
-
-fn entity_count(env: &ProcessEnv) -> u32 {
+fn ehandle_count(env: &ProcessEnv) -> u32 {
     if let Ok(ct) = env.map.entities.len().try_into() {
         ct
     } else {
@@ -159,7 +155,7 @@ fn keyvalue_init_read(
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => ehandle_oob(ehandle),
+        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
     };
 
     let key = match recv_c_string(mem, key_ptr) {
@@ -177,14 +173,14 @@ fn keyvalue_init_read(
     };
 
     let value_bytes = value.to_bytes_with_nul();
-    let size_bytes = &match u32::try_from(value_bytes.len()) {
+    let size_bytes = match u32::try_from(value_bytes.len()) {
         Ok(size) => size.to_le_bytes(),
         Err(_) => {
             abort_plugin!("Attempt to send too many bytes to plugin");
         }
     };
 
-    match send_bytes(mem, size_ptr, size_bytes) {
+    match send_bytes(mem, size_ptr, &size_bytes) {
         Ok(_) => match kvrt.open(value.to_bytes_with_nul()) {
             Ok(_) => qmpp_shared::SUCCESS,
             Err(_) => abort_plugin!("Key-value read transaction already open"),
@@ -204,7 +200,7 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
         }
     };
 
-    if let Err(_) = send_bytes(mem, val_ptr, &payload[..]) {
+    if send_bytes(mem, val_ptr, &payload[..]).is_err() {
         abort_plugin!(
             "Failed to send value with {} bytes to plugin",
             payload.len()
@@ -212,14 +208,23 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     }
 }
 
-fn brush_count(env: &ProcessEnv, ehandle: u32) -> u32 {
+fn bhandle_count(env: &ProcessEnv, ehandle: u32, brush_ct_ptr: u32) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => ehandle_oob(ehandle),
+        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
     };
 
-    match entity {
-        Entity::Brush(_, brushes) => brushes.len() as u32,
+    let brush_ct = match entity {
+        Entity::Brush(_, brushes) => brushes.len().try_into().unwrap(),
         Entity::Point(_) => 0u32,
+    };
+
+    let brush_ct_bytes = brush_ct.to_le_bytes();
+
+    match send_bytes(mem, brush_ct_ptr, &brush_ct_bytes) {
+        Ok(_) => qmpp_shared::SUCCESS,
+        Err(_) => abort_plugin!("Failed to send brush count to plugin"),
     }
 }
