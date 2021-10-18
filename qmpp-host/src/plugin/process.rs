@@ -251,7 +251,7 @@ fn shandle_count(
     let brush = match entity {
         Entity::Point(_) => {
             return qmpp_shared::ERROR_ENTITY_TYPE;
-        },
+        }
         Entity::Brush(_, brushes) => {
             match brushes.get(usize::try_from(brush_idx).unwrap()) {
                 Some(b) => b,
