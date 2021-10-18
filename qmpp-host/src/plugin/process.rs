@@ -124,8 +124,14 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
 
             "QMPP_bhandle_count" => Function::new_native_with_env(
                 module.store(),
-                process_env,
+                process_env.clone(),
                 bhandle_count
+            ),
+
+            "QMPP_shandle_count" => Function::new_native_with_env(
+                module.store(),
+                process_env,
+                shandle_count
             )
         }
     };
@@ -226,5 +232,41 @@ fn bhandle_count(env: &ProcessEnv, ehandle: u32, brush_ct_ptr: u32) -> u32 {
     match send_bytes(mem, brush_ct_ptr, &brush_ct_bytes) {
         Ok(_) => qmpp_shared::SUCCESS,
         Err(_) => abort_plugin!("Failed to send brush count to plugin"),
+    }
+}
+
+fn shandle_count(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_ct_ptr: u32,
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+
+    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
+        Some(ent) => ent,
+        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
+    };
+
+    let brush = match entity {
+        Entity::Point(_) => {
+            return qmpp_shared::ERROR_ENTITY_TYPE;
+        },
+        Entity::Brush(_, brushes) => {
+            match brushes.get(usize::try_from(brush_idx).unwrap()) {
+                Some(b) => b,
+                None => {
+                    return qmpp_shared::ERROR_BRUSH_LOOKUP;
+                }
+            }
+        }
+    };
+
+    let surf_ct: u32 = brush.len().try_into().unwrap();
+    let surf_ct_bytes = surf_ct.to_le_bytes();
+
+    match send_bytes(mem, surface_ct_ptr, &surf_ct_bytes) {
+        Ok(_) => qmpp_shared::SUCCESS,
+        Err(_) => abort_plugin!("Failed to send surface count to plugin"),
     }
 }

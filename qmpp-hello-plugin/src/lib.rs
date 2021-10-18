@@ -26,12 +26,6 @@ pub extern "C" fn QMPP_Hook_init() {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub extern "C" fn QMPP_Hook_process() {
-    let entity_ct = unsafe { QMPP_ehandle_count() };
-    let mesg = format!("Found {} entities", entity_ct);
-    unsafe {
-        QMPP_log_info(mesg.len(), mesg.as_ptr());
-    }
-
     let key = b"message\0".to_vec();
     let mut value_buffer = Vec::<u8>::new();
     let mut value_size = MaybeUninit::<usize>::uninit();
@@ -76,67 +70,55 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
-    let mut brush_ct = MaybeUninit::<u32>::uninit();
+    let entity_ct = unsafe { QMPP_ehandle_count() };
 
-    let status = unsafe { QMPP_bhandle_count(0u32, brush_ct.as_mut_ptr()) };
+    let (brush_ct, surface_ct) = (0..entity_ct).map(|ehandle| {
+        let mut ent_brush_ct = MaybeUninit::<u32>::uninit();
 
-    if status == qmpp_shared::SUCCESS {
-        let brush_ct = unsafe { brush_ct.assume_init() };
-
-        let mesg = format!("Worldspawn has {} brushes", brush_ct);
-
-        unsafe {
-            QMPP_log_info(mesg.len(), mesg.as_ptr());
-        };
-    } else {
-        let mesg = String::from(match status {
-            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
-            _ => "Unknown status",
-        });
-
-        unsafe {
-            QMPP_log_error(mesg.len(), mesg.as_ptr());
-        }
-    }
-
-    let mesg = String::from("Targetnames:");
-
-    unsafe {
-        QMPP_log_info(mesg.len(), mesg.as_ptr());
-    };
-
-    let targetname_key = b"targetname\0".to_vec();
-
-    (0..entity_ct).for_each(|ehandle| {
         let status = unsafe {
-            QMPP_keyvalue_init_read(
-                ehandle,
-                targetname_key.as_ptr(),
-                value_size.as_mut_ptr(),
-            )
+            QMPP_bhandle_count( ehandle, ent_brush_ct.as_mut_ptr())
         };
 
         if status == qmpp_shared::SUCCESS {
-            let value_size = unsafe { value_size.assume_init() };
-            let mut value_buffer = Vec::<u8>::new();
-            value_buffer.reserve(value_size);
-            unsafe { QMPP_keyvalue_read(value_buffer.as_mut_ptr()) };
-            unsafe { value_buffer.set_len(value_size) };
+            let ent_brush_ct = unsafe { ent_brush_ct.assume_init() };
 
-            let value = String::from_utf8(
-                value_buffer
-                    .iter()
-                    .copied()
-                    .take_while(|&ch| ch != 0u8)
-                    .collect::<Vec<u8>>(),
-            )
-            .unwrap();
+            let ent_surface_ct = (0..ent_brush_ct).map(|bhandle| {
+                let mut brush_surface_ct = MaybeUninit::<u32>::uninit();
 
-            unsafe {
-                QMPP_log_info(value.len(), value.as_ptr());
-            }
+                let status = unsafe {
+                    QMPP_shandle_count(
+                        ehandle,
+                        bhandle,
+                        brush_surface_ct.as_mut_ptr(),
+                    )
+                };
+
+                if status == qmpp_shared::SUCCESS {
+                    unsafe { brush_surface_ct.assume_init() }
+                } else {
+                    0
+                }
+            }).sum();
+
+            (ent_brush_ct, ent_surface_ct)
+        } else {
+            (0, 0)
         }
-    });
+    }).fold(
+        (0, 0),
+        |(b_accum, s_accum), (b_ct, s_ct)| (b_accum+b_ct, s_accum+s_ct)
+    );
+
+    let mesg = format!(
+        "Found {} surfaces in {} brushes in {} entities",
+        surface_ct,
+        brush_ct,
+        entity_ct,
+    );
+
+    unsafe {
+        QMPP_log_info(mesg.len(), mesg.as_ptr());
+    }
 }
 
 #[allow(non_snake_case)]
@@ -154,6 +136,9 @@ extern "C" {
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
     pub fn QMPP_bhandle_count(ehandle: u32, brush_ct_ptr: *mut u32) -> u32;
+
+    pub fn QMPP_shandle_count(ehandle: u32, bhandle: u32,
+                              surface_ct_ptr: *mut u32) -> u32;
 }
 
 #[panic_handler]

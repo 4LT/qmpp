@@ -71,10 +71,19 @@ pub fn init(module: &Module) {
             "QMPP_bhandle_count" => Function::new_native(
                 module.store(),
                 stub_import!(
-                    "QMPP_brush_count",
+                    "QMPP_bhandle_count",
                     "init",
                     (u32, u32),
                     u32,
+                )
+            ),
+            "QMPP_shandle_count" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_shandle_count",
+                    "init",
+                    (u32, u32, u32),
+                    u32
                 )
             )
         }
