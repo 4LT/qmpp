@@ -78,9 +78,7 @@ pub extern "C" fn QMPP_Hook_process() {
     let mut keys_size = MaybeUninit::<usize>::uninit();
     let mut key_buffer = Vec::<u8>::new();
 
-    let status = unsafe {
-        QMPP_keys_init_read(0u32, keys_size.as_mut_ptr())
-    };
+    let status = unsafe { QMPP_keys_init_read(0u32, keys_size.as_mut_ptr()) };
 
     if status == qmpp_shared::SUCCESS {
         let keys_size = unsafe { keys_size.assume_init() };
@@ -95,7 +93,8 @@ pub extern "C" fn QMPP_Hook_process() {
             .filter(|slice| slice.len() > 0);
 
         keys.for_each(|key| {
-            let key_c_str = key.into_iter()
+            let key_c_str = key
+                .into_iter()
                 .chain(b"\0".into_iter())
                 .copied()
                 .collect::<Vec<u8>>();
@@ -107,7 +106,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 QMPP_keyvalue_init_read(
                     0u32,
                     key_c_str.as_ptr(),
-                    value_size.as_mut_ptr()
+                    value_size.as_mut_ptr(),
                 )
             };
 
@@ -125,8 +124,9 @@ pub extern "C" fn QMPP_Hook_process() {
                     value_buffer
                         .into_iter()
                         .take_while(|&ch| ch != 0)
-                        .collect::<Vec<u8>>()
-                ).unwrap();
+                        .collect::<Vec<u8>>(),
+                )
+                .unwrap();
 
                 let key = String::from_utf8(key.to_vec()).unwrap();
 
@@ -137,7 +137,6 @@ pub extern "C" fn QMPP_Hook_process() {
                 }
             }
         });
-
     } else {
         let mesg = String::from(match status {
             qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
@@ -215,10 +214,7 @@ extern "C" {
     ) -> u32;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    pub fn QMPP_keys_init_read(
-        ehandle: u32,
-        size_ptr: *mut usize,
-    ) -> u32;
+    pub fn QMPP_keys_init_read(ehandle: u32, size_ptr: *mut usize) -> u32;
     pub fn QMPP_keys_read(keys_ptr: *mut u8);
 
     pub fn QMPP_bhandle_count(ehandle: u32, brush_ct_ptr: *mut u32) -> u32;
