@@ -46,8 +46,7 @@ pub extern "C" fn QMPP_Hook_process() {
 
         let value = String::from_utf8(
             value_buffer
-                .iter()
-                .copied()
+                .into_iter()
                 .take_while(|&ch| ch != 0u8)
                 .collect::<Vec<u8>>(),
         )
@@ -70,6 +69,86 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     }
 
+    let mesg = String::from("Worldspawn keys & values:");
+
+    unsafe {
+        QMPP_log_info(mesg.len(), mesg.as_ptr());
+    }
+
+    let mut keys_size = MaybeUninit::<usize>::uninit();
+    let mut key_buffer = Vec::<u8>::new();
+
+    let status = unsafe {
+        QMPP_keys_init_read(0u32, keys_size.as_mut_ptr())
+    };
+
+    if status == qmpp_shared::SUCCESS {
+        let keys_size = unsafe { keys_size.assume_init() };
+        key_buffer.reserve(keys_size);
+
+        unsafe { QMPP_keys_read(key_buffer.as_mut_ptr()) };
+
+        unsafe { key_buffer.set_len(keys_size) };
+
+        let keys = key_buffer[..]
+            .split(|&ch| ch == 0u8)
+            .filter(|slice| slice.len() > 0);
+
+        keys.for_each(|key| {
+            let key_c_str = key.into_iter()
+                .chain(b"\0".into_iter())
+                .copied()
+                .collect::<Vec<u8>>();
+
+            let mut value_size = MaybeUninit::<usize>::uninit();
+            let mut value_buffer = Vec::<u8>::new();
+
+            let status = unsafe {
+                QMPP_keyvalue_init_read(
+                    0u32,
+                    key_c_str.as_ptr(),
+                    value_size.as_mut_ptr()
+                )
+            };
+
+            if status == qmpp_shared::SUCCESS {
+                let value_size = unsafe { value_size.assume_init() };
+                value_buffer.reserve(value_size);
+
+                unsafe { QMPP_keyvalue_read(value_buffer.as_mut_ptr()) };
+
+                unsafe {
+                    value_buffer.set_len(value_size);
+                }
+
+                let value = String::from_utf8(
+                    value_buffer
+                        .into_iter()
+                        .take_while(|&ch| ch != 0)
+                        .collect::<Vec<u8>>()
+                ).unwrap();
+
+                let key = String::from_utf8(key.to_vec()).unwrap();
+
+                let mesg = format!("{}: {}", key, value);
+
+                unsafe {
+                    QMPP_log_info(mesg.len(), mesg.as_ptr());
+                }
+            }
+        });
+
+    } else {
+        let mesg = String::from(match status {
+            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
+            _ => "Unknown status",
+        });
+
+        unsafe {
+            QMPP_log_error(mesg.len(), mesg.as_ptr());
+        }
+    }
+
     let entity_ct = unsafe { QMPP_ehandle_count() };
 
     let (brush_ct, surface_ct) = (0..entity_ct)
@@ -84,13 +163,13 @@ pub extern "C" fn QMPP_Hook_process() {
                 let ent_brush_ct = unsafe { ent_brush_ct.assume_init() };
 
                 let ent_surface_ct = (0..ent_brush_ct)
-                    .map(|bhandle| {
+                    .map(|b_idx| {
                         let mut brush_surface_ct = MaybeUninit::<u32>::uninit();
 
                         let status = unsafe {
                             QMPP_shandle_count(
                                 ehandle,
-                                bhandle,
+                                b_idx,
                                 brush_surface_ct.as_mut_ptr(),
                             )
                         };
@@ -136,11 +215,17 @@ extern "C" {
     ) -> u32;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
+    pub fn QMPP_keys_init_read(
+        ehandle: u32,
+        size_ptr: *mut usize,
+    ) -> u32;
+    pub fn QMPP_keys_read(keys_ptr: *mut u8);
+
     pub fn QMPP_bhandle_count(ehandle: u32, brush_ct_ptr: *mut u32) -> u32;
 
     pub fn QMPP_shandle_count(
         ehandle: u32,
-        bhandle: u32,
+        brush_idx: u32,
         surface_ct_ptr: *mut u32,
     ) -> u32;
 }
