@@ -23,7 +23,7 @@ struct ProcessEnv {
 
     map: Arc<QuakeMap>,
     keyvalue_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
-    keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>
+    keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
 }
 
 impl PluginEnv for ProcessEnv {
@@ -78,12 +78,8 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
         plugin_name: String::from("hello"),
         memory: LazyInit::new(),
         map,
-        keyvalue_read_transaction: Arc::new(Mutex::new(
-            Transaction::new(),
-        )),
-        keys_read_transaction: Arc::new(Mutex::new(
-            Transaction::new(),
-        )),
+        keyvalue_read_transaction: Arc::new(Mutex::new(Transaction::new())),
+        keys_read_transaction: Arc::new(Mutex::new(Transaction::new())),
     };
 
     let import_object = imports! {
@@ -227,11 +223,7 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     }
 }
 
-fn keys_init_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    size_ptr: u32
-) -> u32 {
+fn keys_init_read(env: &ProcessEnv, ehandle: u32, size_ptr: u32) -> u32 {
     let mem = env.memory.get_ref().unwrap();
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
