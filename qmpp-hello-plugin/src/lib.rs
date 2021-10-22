@@ -90,14 +90,11 @@ pub extern "C" fn QMPP_Hook_process() {
 
         let keys = key_buffer[..]
             .split(|&ch| ch == 0u8)
-            .filter(|slice| slice.len() > 0);
+            .filter(|slice| !slice.is_empty());
 
         keys.for_each(|key| {
-            let key_c_str = key
-                .into_iter()
-                .chain(b"\0".into_iter())
-                .copied()
-                .collect::<Vec<u8>>();
+            let key_c_str =
+                key.iter().chain(b"\0".iter()).copied().collect::<Vec<u8>>();
 
             let mut value_size = MaybeUninit::<usize>::uninit();
             let mut value_buffer = Vec::<u8>::new();

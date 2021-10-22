@@ -235,7 +235,7 @@ fn keys_init_read(env: &ProcessEnv, ehandle: u32, size_ptr: u32) -> u32 {
     let keys = entity
         .edict()
         .keys()
-        .flat_map(|key| key.as_bytes_with_nul().into_iter())
+        .flat_map(|key| key.as_bytes_with_nul().iter())
         .copied()
         .collect::<Vec<u8>>();
 
