@@ -4,7 +4,7 @@ cargo-features = ["per-package-target"]
 name = "qmpp-hello-plugin"
 version = "0.1.0"
 authors = ["seth <rader.seth@gmail.com>"]
-edition = "2018"
+edition = "2021"
 forced-target = "wasm32-unknown-unknown"
 
 [lib]
