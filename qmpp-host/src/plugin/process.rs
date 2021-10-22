@@ -22,7 +22,8 @@ struct ProcessEnv {
     memory: LazyInit<Memory>,
 
     map: Arc<QuakeMap>,
-    keyvalue_read_transaction: Arc<Mutex<KeyvalueReadTransaction>>,
+    keyvalue_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
+    keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>
 }
 
 impl PluginEnv for ProcessEnv {
@@ -35,40 +36,38 @@ impl PluginEnv for ProcessEnv {
     }
 }
 
-enum KeyvalueReadState {
+enum TransactionState<T> {
     Closed,
-    Open(Vec<u8>),
+    Open(T),
 }
 
-struct KeyvalueReadTransaction {
-    state: KeyvalueReadState,
+struct Transaction<T> {
+    state: TransactionState<T>,
 }
 
-impl KeyvalueReadTransaction {
+impl<T> Transaction<T> {
     pub fn new() -> Self {
         Self {
-            state: KeyvalueReadState::Closed,
+            state: TransactionState::Closed,
         }
     }
 
-    pub fn open(&mut self, bytes: &[u8]) -> Result<(), ()> {
-        let byte_vec = bytes.to_vec();
-
+    pub fn open(&mut self, payload: T) -> Result<(), ()> {
         match self.state {
-            KeyvalueReadState::Closed => {
-                self.state = KeyvalueReadState::Open(byte_vec);
+            TransactionState::Closed => {
+                self.state = TransactionState::Open(payload);
                 Ok(())
             }
-            KeyvalueReadState::Open(_) => Err(()),
+            TransactionState::Open(_) => Err(()),
         }
     }
 
-    pub fn close(&mut self) -> Result<Vec<u8>, ()> {
-        match std::mem::replace(&mut self.state, KeyvalueReadState::Closed) {
-            KeyvalueReadState::Closed => Err(()),
-            KeyvalueReadState::Open(byte_vec) => {
-                self.state = KeyvalueReadState::Closed;
-                Ok(byte_vec)
+    pub fn close(&mut self) -> Result<T, ()> {
+        match std::mem::replace(&mut self.state, TransactionState::Closed) {
+            TransactionState::Closed => Err(()),
+            TransactionState::Open(payload) => {
+                self.state = TransactionState::Closed;
+                Ok(payload)
             }
         }
     }
@@ -80,7 +79,10 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
         memory: LazyInit::new(),
         map,
         keyvalue_read_transaction: Arc::new(Mutex::new(
-            KeyvalueReadTransaction::new(),
+            Transaction::new(),
+        )),
+        keys_read_transaction: Arc::new(Mutex::new(
+            Transaction::new(),
         )),
     };
 
@@ -120,6 +122,17 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
                 module.store(),
                 process_env.clone(),
                 keyvalue_read
+            ),
+
+            "QMPP_keys_init_read" => Function::new_native_with_env(
+                module.store(),
+                process_env.clone(),
+                keys_init_read,
+            ),
+            "QMPP_keys_read" => Function::new_native_with_env(
+                module.store(),
+                process_env.clone(),
+                keys_read,
             ),
 
             "QMPP_bhandle_count" => Function::new_native_with_env(
@@ -178,7 +191,7 @@ fn keyvalue_init_read(
         }
     };
 
-    let value_bytes = value.to_bytes_with_nul();
+    let value_bytes = value.to_bytes_with_nul().to_vec();
     let size_bytes = match u32::try_from(value_bytes.len()) {
         Ok(size) => size.to_le_bytes(),
         Err(_) => {
@@ -187,7 +200,7 @@ fn keyvalue_init_read(
     };
 
     match send_bytes(mem, size_ptr, &size_bytes) {
-        Ok(_) => match kvrt.open(value.to_bytes_with_nul()) {
+        Ok(_) => match kvrt.open(value_bytes) {
             Ok(_) => qmpp_shared::SUCCESS,
             Err(_) => abort_plugin!("Key-value read transaction already open"),
         },
@@ -209,6 +222,61 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     if send_bytes(mem, val_ptr, &payload[..]).is_err() {
         abort_plugin!(
             "Failed to send value with {} bytes to plugin",
+            payload.len()
+        )
+    }
+}
+
+fn keys_init_read(
+    env: &ProcessEnv,
+    ehandle: u32,
+    size_ptr: u32
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+    let mut krt = env.keys_read_transaction.lock().unwrap();
+
+    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
+        Some(ent) => ent,
+        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
+    };
+
+    let keys = entity
+        .edict()
+        .keys()
+        .flat_map(|key| key.as_bytes_with_nul().into_iter())
+        .copied()
+        .collect::<Vec<u8>>();
+
+    let size_bytes = match u32::try_from(keys.len()) {
+        Ok(size) => size.to_le_bytes(),
+        Err(_) => {
+            abort_plugin!("Attempt to send too many bytes to plugin");
+        }
+    };
+
+    match send_bytes(mem, size_ptr, &size_bytes) {
+        Ok(_) => match krt.open(keys) {
+            Ok(_) => qmpp_shared::SUCCESS,
+            Err(_) => abort_plugin!("Keys transaction already open"),
+        },
+        Err(_) => abort_plugin!("Failed to send size to plugin"),
+    }
+}
+
+fn keys_read(env: &ProcessEnv, keys_ptr: u32) {
+    let mem = env.memory.get_ref().unwrap();
+    let mut krt = env.keys_read_transaction.lock().unwrap();
+
+    let payload = match krt.close() {
+        Ok(keys) => keys,
+        Err(_) => {
+            abort_plugin!("Keys read transaction is closed")
+        }
+    };
+
+    if send_bytes(mem, keys_ptr, &payload[..]).is_err() {
+        abort_plugin!(
+            "Failed to send keys in {} bytes to plugin",
             payload.len()
         )
     }
