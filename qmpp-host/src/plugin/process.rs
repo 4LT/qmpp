@@ -24,6 +24,7 @@ struct ProcessEnv {
     map: Arc<QuakeMap>,
     keyvalue_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
     keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
+    texture_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
 }
 
 impl PluginEnv for ProcessEnv {
@@ -80,6 +81,7 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
         map,
         keyvalue_read_transaction: Arc::new(Mutex::new(Transaction::new())),
         keys_read_transaction: Arc::new(Mutex::new(Transaction::new())),
+        texture_read_transaction: Arc::new(Mutex::new(Transaction::new())),
     };
 
     let import_object = imports! {
@@ -139,8 +141,19 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
 
             "QMPP_shandle_count" => Function::new_native_with_env(
                 module.store(),
-                process_env,
+                process_env.clone(),
                 shandle_count
+            ),
+
+            "QMPP_texture_init_read" => Function::new_native_with_env(
+                module.store(),
+                process_env.clone(),
+                texture_init_read,
+            ),
+            "QMPP_texture_read" => Function::new_native_with_env(
+                module.store(),
+                process_env,
+                texture_read,
             )
         }
     };
@@ -328,5 +341,80 @@ fn shandle_count(
     match send_bytes(mem, surface_ct_ptr, &surf_ct_bytes) {
         Ok(_) => qmpp_shared::SUCCESS,
         Err(_) => abort_plugin!("Failed to send surface count to plugin"),
+    }
+}
+
+fn texture_init_read(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_idx: u32,
+    size_ptr: u32,
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+    let mut trt = env.texture_read_transaction.lock().unwrap();
+
+    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
+        Some(ent) => ent,
+        None => {
+            return qmpp_shared::ERROR_ENTITY_LOOKUP;
+        }
+    };
+
+    let brushes = match entity {
+        Entity::Brush(_, brushes) => brushes,
+        Entity::Point(_) => {
+            return qmpp_shared::ERROR_ENTITY_TYPE;
+        }
+    };
+
+    let brush = match brushes.get(usize::try_from(brush_idx).unwrap()) {
+        Some(b) => b,
+        None => {
+            return qmpp_shared::ERROR_BRUSH_LOOKUP;
+        }
+    };
+
+    let surface = match brush.get(usize::try_from(surface_idx).unwrap()) {
+        Some(s) => s,
+        None => {
+            return qmpp_shared::ERROR_SURFACE_LOOKUP;
+        }
+    };
+
+    let texture = surface.texture.as_bytes_with_nul().to_vec();
+
+    let size_bytes = match u32::try_from(texture.len()) {
+        Ok(size) => size.to_le_bytes(),
+        Err(_) => {
+            abort_plugin!("Attempt to send too many bytes to plugin");
+        }
+    };
+
+    match send_bytes(mem, size_ptr, &size_bytes) {
+        Ok(_) => match trt.open(texture) {
+            Ok(_) => qmpp_shared::SUCCESS,
+            Err(_) => abort_plugin!("Texture transaction already open"),
+        },
+        Err(_) => abort_plugin!("Failed to send size to plugin"),
+    }
+}
+
+fn texture_read(env: &ProcessEnv, texture_ptr: u32) {
+    let mem = env.memory.get_ref().unwrap();
+    let mut trt = env.texture_read_transaction.lock().unwrap();
+
+    let payload = match trt.close() {
+        Ok(texture) => texture,
+        Err(_) => {
+            abort_plugin!("Texture read transaction is closed")
+        }
+    };
+
+    if send_bytes(mem, texture_ptr, &payload[..]).is_err() {
+        abort_plugin!(
+            "Failed to send texture in {} bytes to plugin",
+            payload.len()
+        )
     }
 }
