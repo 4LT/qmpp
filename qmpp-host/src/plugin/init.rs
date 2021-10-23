@@ -102,6 +102,24 @@ pub fn init(module: &Module) {
                     (u32, u32, u32),
                     u32
                 )
+            ),
+
+            "QMPP_texture_init_read" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_texture_init_read",
+                    "init",
+                    (u32, u32, u32, u32),
+                    u32
+                )
+            ),
+            "QMPP_texture_read" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_texture_read",
+                    "init",
+                    u32,
+                )
             )
         }
     };

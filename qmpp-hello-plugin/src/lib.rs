@@ -195,6 +195,105 @@ pub extern "C" fn QMPP_Hook_process() {
     unsafe {
         QMPP_log_info(mesg.len(), mesg.as_ptr());
     }
+
+    let mesg = "Button textures:";
+
+    unsafe {
+        QMPP_log_info(mesg.len(), mesg.as_ptr());
+    }
+
+    let classname_key = b"classname\0".to_vec();
+
+    (0..entity_ct)
+        .filter(|&ehandle| {
+            let mut classname_size = MaybeUninit::<usize>::uninit();
+            let mut classname = Vec::<u8>::new();
+
+            let status = unsafe {
+                QMPP_keyvalue_init_read(
+                    ehandle,
+                    classname_key.as_ptr(),
+                    classname_size.as_mut_ptr(),
+                )
+            };
+
+            if status == qmpp_shared::SUCCESS {
+                let classname_size = unsafe { classname_size.assume_init() };
+
+                classname.reserve(classname_size);
+
+                unsafe {
+                    QMPP_keyvalue_read(classname.as_mut_ptr());
+                    classname.set_len(classname_size);
+                }
+
+                &classname[..] == b"func_button\0"
+            } else {
+                false
+            }
+        })
+        .filter_map(|ehandle| {
+            let mut bhandle_ct = MaybeUninit::<u32>::uninit();
+
+            let status =
+                unsafe { QMPP_bhandle_count(ehandle, bhandle_ct.as_mut_ptr()) };
+
+            if status == qmpp_shared::SUCCESS {
+                Some((ehandle, unsafe { bhandle_ct.assume_init() }))
+            } else {
+                None
+            }
+        })
+        .flat_map(|(ehandle, bhandle_ct)| {
+            (0..bhandle_ct).map(move |b_idx| (ehandle, b_idx))
+        })
+        .filter_map(|(ehandle, b_idx)| {
+            let mut shandle_ct = MaybeUninit::<u32>::uninit();
+
+            let status = unsafe {
+                QMPP_shandle_count(ehandle, b_idx, shandle_ct.as_mut_ptr())
+            };
+
+            if status == qmpp_shared::SUCCESS {
+                Some((ehandle, b_idx, unsafe { shandle_ct.assume_init() }))
+            } else {
+                None
+            }
+        })
+        .flat_map(|(ehandle, b_idx, shandle_ct)| {
+            (0..shandle_ct).map(move |s_idx| (ehandle, b_idx, s_idx))
+        })
+        .filter_map(|(ehandle, b_idx, s_idx)| {
+            let mut tex_size = MaybeUninit::<usize>::uninit();
+            let mut texture = Vec::<u8>::new();
+
+            let status = unsafe {
+                QMPP_texture_init_read(
+                    ehandle,
+                    b_idx,
+                    s_idx,
+                    tex_size.as_mut_ptr(),
+                )
+            };
+
+            if status == qmpp_shared::SUCCESS {
+                let tex_size = unsafe { tex_size.assume_init() };
+
+                texture.reserve(tex_size);
+
+                unsafe {
+                    QMPP_texture_read(texture.as_mut_ptr());
+                    texture.set_len(tex_size);
+                }
+
+                Some(String::from_utf8(texture).unwrap())
+            } else {
+                None
+            }
+        })
+        .for_each(|texture| unsafe {
+            QMPP_log_info(texture.len(), texture.as_ptr());
+        });
 }
 
 #[allow(non_snake_case)]
@@ -221,6 +320,14 @@ extern "C" {
         brush_idx: u32,
         surface_ct_ptr: *mut u32,
     ) -> u32;
+
+    pub fn QMPP_texture_init_read(
+        ehandle: u32,
+        brush_idx: u32,
+        surface_idx: u32,
+        size_ptr: *mut usize,
+    ) -> u32;
+    pub fn QMPP_texture_read(texture_ptr: *mut u8);
 }
 
 #[cfg(not(test))]
