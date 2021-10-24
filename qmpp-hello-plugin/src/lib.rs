@@ -286,7 +286,15 @@ pub extern "C" fn QMPP_Hook_process() {
                     texture.set_len(tex_size);
                 }
 
-                Some(String::from_utf8(texture).unwrap())
+                Some(
+                    String::from_utf8(
+                        texture
+                            .into_iter()
+                            .take_while(|&ch| ch != 0u8)
+                            .collect(),
+                    )
+                    .unwrap(),
+                )
             } else {
                 None
             }
