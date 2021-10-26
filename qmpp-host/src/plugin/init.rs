@@ -120,6 +120,36 @@ pub fn init(module: &Module) {
                     "init",
                     u32,
                 )
+            ),
+
+            "QMPP_half_space_read" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_half_space_read",
+                    "init",
+                    (u32, u32, u32, u32),
+                    u32
+                )
+            ),
+
+            "QMPP_texture_alignment_read" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_texture_alignment_read",
+                    "init",
+                    (u32, u32, u32, u32),
+                    u32
+                )
+            ),
+
+            "QMPP_texture_axes_read" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_texture_axes_read",
+                    "init",
+                    (u32, u32, u32, u32),
+                    u32
+                )
             )
         }
     };

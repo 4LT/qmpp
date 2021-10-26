@@ -6,3 +6,4 @@ pub const ERROR_ENTITY_LOOKUP: u32 = 2;
 pub const ERROR_BRUSH_LOOKUP: u32 = 3;
 pub const ERROR_SURFACE_LOOKUP: u32 = 4;
 pub const ERROR_ENTITY_TYPE: u32 = 5;
+pub const ERROR_NO_AXES: u32 = 6;
