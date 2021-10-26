@@ -424,10 +424,8 @@ fn half_space_read(
 
     let payload = surface
         .half_space
-        .0
         .into_iter()
-        .chain(surface.half_space.1.into_iter())
-        .chain(surface.half_space.2.into_iter())
+        .flat_map(|point| point.into_iter())
         .flat_map(|num| num.to_le_bytes().into_iter())
         .collect::<Vec<u8>>();
 
@@ -460,7 +458,7 @@ fn texture_alignment_read(
 
     let alignment = match &surface.alignment {
         Alignment::Standard(align) => align,
-        Alignment::Valve220 { base, u: _, v: _ } => base,
+        Alignment::Valve220 { base, axes: _ } => base,
     };
 
     let payload = alignment
@@ -502,7 +500,10 @@ fn texture_axes_read(
         Alignment::Standard(_) => {
             return qmpp_shared::ERROR_NO_AXES;
         }
-        Alignment::Valve220 { base: _, u, v } => [u, v],
+        Alignment::Valve220 {
+            base: _,
+            axes: [u, v],
+        } => [u, v],
     };
 
     let payload = axes
