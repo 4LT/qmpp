@@ -7,7 +7,7 @@ use wasmer::{
     imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
 };
 
-use quake_util::qmap::{Entity, QuakeMap};
+use quake_util::qmap::{Alignment, Brush, Entity, QuakeMap, Surface};
 
 use super::common::{
     log_error, log_info, recv_c_string, send_bytes, PluginEnv,
@@ -152,8 +152,26 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
             ),
             "QMPP_texture_read" => Function::new_native_with_env(
                 module.store(),
-                process_env,
+                process_env.clone(),
                 texture_read,
+            ),
+
+            "QMPP_half_space_read" => Function::new_native_with_env(
+                module.store(),
+                process_env.clone(),
+                half_space_read
+            ),
+
+            "QMPP_texture_alignment_read" => Function::new_native_with_env(
+                module.store(),
+                process_env.clone(),
+                texture_alignment_read
+            ),
+
+            "QMPP_texture_axes_read" => Function::new_native_with_env(
+                module.store(),
+                process_env,
+                texture_axes_read
             )
         }
     };
@@ -316,22 +334,10 @@ fn shandle_count(
 ) -> u32 {
     let mem = env.memory.get_ref().unwrap();
 
-    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
-        Some(ent) => ent,
-        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
-    };
-
-    let brush = match entity {
-        Entity::Point(_) => {
-            return qmpp_shared::ERROR_ENTITY_TYPE;
-        }
-        Entity::Brush(_, brushes) => {
-            match brushes.get(usize::try_from(brush_idx).unwrap()) {
-                Some(b) => b,
-                None => {
-                    return qmpp_shared::ERROR_BRUSH_LOOKUP;
-                }
-            }
+    let brush = match get_brush(env.map.as_ref(), ehandle, brush_idx) {
+        Ok(b) => b,
+        Err(code) => {
+            return code;
         }
     };
 
@@ -354,33 +360,13 @@ fn texture_init_read(
     let mem = env.memory.get_ref().unwrap();
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
-    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
-        Some(ent) => ent,
-        None => {
-            return qmpp_shared::ERROR_ENTITY_LOOKUP;
-        }
-    };
-
-    let brushes = match entity {
-        Entity::Brush(_, brushes) => brushes,
-        Entity::Point(_) => {
-            return qmpp_shared::ERROR_ENTITY_TYPE;
-        }
-    };
-
-    let brush = match brushes.get(usize::try_from(brush_idx).unwrap()) {
-        Some(b) => b,
-        None => {
-            return qmpp_shared::ERROR_BRUSH_LOOKUP;
-        }
-    };
-
-    let surface = match brush.get(usize::try_from(surface_idx).unwrap()) {
-        Some(s) => s,
-        None => {
-            return qmpp_shared::ERROR_SURFACE_LOOKUP;
-        }
-    };
+    let surface =
+        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
+            Ok(s) => s,
+            Err(code) => {
+                return code;
+            }
+        };
 
     let texture = surface.texture.as_bytes_with_nul().to_vec();
 
@@ -416,5 +402,161 @@ fn texture_read(env: &ProcessEnv, texture_ptr: u32) {
             "Failed to send texture in {} bytes to plugin",
             payload.len()
         )
+    }
+}
+
+fn half_space_read(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_idx: u32,
+    ptr: u32,
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+
+    let surface =
+        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
+            Ok(s) => s,
+            Err(code) => {
+                return code;
+            }
+        };
+
+    let payload = surface
+        .half_space
+        .0
+        .into_iter()
+        .chain(surface.half_space.1.into_iter())
+        .chain(surface.half_space.2.into_iter())
+        .flat_map(|num| num.to_le_bytes().into_iter())
+        .collect::<Vec<u8>>();
+
+    if send_bytes(mem, ptr, &payload[..]).is_err() {
+        abort_plugin!(
+            "Failed to send half-space in {} bytes to plugin",
+            payload.len()
+        )
+    }
+
+    qmpp_shared::SUCCESS
+}
+
+fn texture_alignment_read(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_idx: u32,
+    ptr: u32,
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+
+    let surface =
+        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
+            Ok(s) => s,
+            Err(code) => {
+                return code;
+            }
+        };
+
+    let alignment = match &surface.alignment {
+        Alignment::Standard(align) => align,
+        Alignment::Valve220 { base, u: _, v: _ } => base,
+    };
+
+    let payload = alignment
+        .offset
+        .into_iter()
+        .chain([alignment.rotation].into_iter())
+        .chain(alignment.scale.into_iter())
+        .flat_map(|num| num.to_le_bytes().into_iter())
+        .collect::<Vec<u8>>();
+
+    if send_bytes(mem, ptr, &payload[..]).is_err() {
+        abort_plugin!(
+            "Failed to send alignment in {} bytes to plugin",
+            payload.len()
+        )
+    }
+
+    qmpp_shared::SUCCESS
+}
+
+fn texture_axes_read(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_idx: u32,
+    ptr: u32,
+) -> u32 {
+    let mem = env.memory.get_ref().unwrap();
+
+    let surface =
+        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
+            Ok(s) => s,
+            Err(code) => {
+                return code;
+            }
+        };
+
+    let axes = match &surface.alignment {
+        Alignment::Standard(_) => {
+            return qmpp_shared::ERROR_NO_AXES;
+        }
+        Alignment::Valve220 { base: _, u, v } => [u, v],
+    };
+
+    let payload = axes
+        .into_iter()
+        .flat_map(|axis| axis.iter())
+        .flat_map(|num| num.to_le_bytes().into_iter())
+        .collect::<Vec<u8>>();
+
+    if send_bytes(mem, ptr, &payload[..]).is_err() {
+        abort_plugin!(
+            "Failed to send axes in {} bytes to plugin",
+            payload.len()
+        )
+    }
+
+    qmpp_shared::SUCCESS
+}
+
+fn get_brush(
+    map: &QuakeMap,
+    ehandle: u32,
+    brush_idx: u32,
+) -> Result<&Brush, u32> {
+    let entity = match map.entities.get(usize::try_from(ehandle).unwrap()) {
+        Some(ent) => ent,
+        None => {
+            return Err(qmpp_shared::ERROR_ENTITY_LOOKUP);
+        }
+    };
+
+    let brushes = match entity {
+        Entity::Brush(_, brushes) => brushes,
+        Entity::Point(_) => {
+            return Err(qmpp_shared::ERROR_ENTITY_TYPE);
+        }
+    };
+
+    match brushes.get(usize::try_from(brush_idx).unwrap()) {
+        Some(b) => Ok(b),
+        None => Err(qmpp_shared::ERROR_BRUSH_LOOKUP),
+    }
+}
+
+fn get_surface(
+    map: &QuakeMap,
+    ehandle: u32,
+    brush_idx: u32,
+    surface_idx: u32,
+) -> Result<&Surface, u32> {
+    match get_brush(map, ehandle, brush_idx) {
+        Ok(brush) => match brush.get(usize::try_from(surface_idx).unwrap()) {
+            Some(s) => Ok(s),
+            None => Err(qmpp_shared::ERROR_SURFACE_LOOKUP),
+        },
+        Err(code) => Err(code),
     }
 }

@@ -14,6 +14,17 @@ use core::panic::PanicInfo;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+const HALF_SPACE_POINTS: usize = 3;
+const VECTOR_3D_COORDS: usize = 3;
+const OFFSET_COMPONENTS: usize = 2;
+const ROTATION_COMPONENTS: usize = 1;
+const SCALE_COMPONENTS: usize = 2;
+
+type HalfSpace = [[f64; VECTOR_3D_COORDS]; HALF_SPACE_POINTS];
+type Alignment =
+    [f64; OFFSET_COMPONENTS + ROTATION_COMPONENTS + SCALE_COMPONENTS];
+type Vec3 = [f64; VECTOR_3D_COORDS];
+
 #[allow(non_snake_case)]
 #[no_mangle]
 pub extern "C" fn QMPP_Hook_init() {
@@ -266,6 +277,9 @@ pub extern "C" fn QMPP_Hook_process() {
         .filter_map(|(ehandle, b_idx, s_idx)| {
             let mut tex_size = MaybeUninit::<usize>::uninit();
             let mut texture = Vec::<u8>::new();
+            let mut half_space = MaybeUninit::<HalfSpace>::uninit();
+            let mut alignment = MaybeUninit::<Alignment>::uninit();
+            let mut axes = MaybeUninit::<[Vec3; 2]>::uninit();
 
             let status = unsafe {
                 QMPP_texture_init_read(
@@ -276,31 +290,114 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status == qmpp_shared::SUCCESS {
-                let tex_size = unsafe { tex_size.assume_init() };
-
-                texture.reserve(tex_size);
-
-                unsafe {
-                    QMPP_texture_read(texture.as_mut_ptr());
-                    texture.set_len(tex_size);
-                }
-
-                Some(
-                    String::from_utf8(
-                        texture
-                            .into_iter()
-                            .take_while(|&ch| ch != 0u8)
-                            .collect(),
-                    )
-                    .unwrap(),
-                )
-            } else {
-                None
+            if status != qmpp_shared::SUCCESS {
+                return None;
             }
+
+            let tex_size = unsafe { tex_size.assume_init() };
+
+            texture.reserve(tex_size);
+
+            unsafe {
+                QMPP_texture_read(texture.as_mut_ptr());
+                texture.set_len(tex_size);
+            }
+
+            let status = unsafe {
+                QMPP_half_space_read(
+                    ehandle,
+                    b_idx,
+                    s_idx,
+                    half_space.as_mut_ptr(),
+                )
+            };
+
+            if status != qmpp_shared::SUCCESS {
+                return None;
+            }
+
+            let half_space = unsafe { half_space.assume_init() };
+
+            let status = unsafe {
+                QMPP_texture_alignment_read(
+                    ehandle,
+                    b_idx,
+                    s_idx,
+                    alignment.as_mut_ptr(),
+                )
+            };
+
+            if status != qmpp_shared::SUCCESS {
+                return None;
+            }
+
+            let alignment = unsafe { alignment.assume_init() };
+
+            let status = unsafe {
+                QMPP_texture_axes_read(ehandle, b_idx, s_idx, axes.as_mut_ptr())
+            };
+
+            let axes = if status == qmpp_shared::SUCCESS {
+                Some(unsafe { axes.assume_init() })
+            } else if status == qmpp_shared::ERROR_NO_AXES {
+                None
+            } else {
+                return None;
+            };
+
+            Some((
+                half_space,
+                String::from_utf8(
+                    texture.into_iter().take_while(|&ch| ch != 0u8).collect(),
+                )
+                .unwrap(),
+                alignment,
+                axes,
+            ))
         })
-        .for_each(|texture| unsafe {
-            QMPP_log_info(texture.len(), texture.as_ptr());
+        .for_each(|(half_space, texture, alignment, axes)| {
+            let mut points = half_space
+                .into_iter()
+                .map(|[x, y, z]| format!("{:5} {:5} {:5}", x, y, z));
+
+            let mesg = format!(
+                "({}) ({}) ({}):",
+                points.next().unwrap(),
+                points.next().unwrap(),
+                points.next().unwrap(),
+            );
+            unsafe {
+                QMPP_log_info(mesg.len(), mesg.as_ptr());
+            }
+
+            if let Some(axes) = axes {
+                let mesg = format!(
+                    "  U: <{:2.3} {:2.3} {:2.3}> V: <{:2.3} {:2.3} {:2.3}>",
+                    axes[0][0],
+                    axes[0][1],
+                    axes[0][2],
+                    axes[1][0],
+                    axes[1][1],
+                    axes[1][2]
+                );
+                unsafe {
+                    QMPP_log_info(mesg.len(), mesg.as_ptr());
+                }
+            }
+
+            let mesg = format!(
+                "  texture: {} offset: ({:3.1} {:3.1}) \
+                rotation: {:4.3} scale: ({:2.2} {:2.2})",
+                texture,
+                alignment[0],
+                alignment[1],
+                alignment[2],
+                alignment[3],
+                alignment[4]
+            );
+            unsafe {
+                QMPP_log_info(mesg.len(), mesg.as_ptr());
+            }
         });
 }
 
@@ -336,6 +433,27 @@ extern "C" {
         size_ptr: *mut usize,
     ) -> u32;
     pub fn QMPP_texture_read(texture_ptr: *mut u8);
+
+    pub fn QMPP_half_space_read(
+        ehandle: u32,
+        brush_idx: u32,
+        surface_idx: u32,
+        ptr: *mut HalfSpace,
+    ) -> u32;
+
+    pub fn QMPP_texture_alignment_read(
+        ehandle: u32,
+        brush_idx: u32,
+        surface_idx: u32,
+        ptr: *mut Alignment,
+    ) -> u32;
+
+    pub fn QMPP_texture_axes_read(
+        ehandle: u32,
+        brush_idx: u32,
+        surface_idx: u32,
+        ptr: *mut [Vec3; 2],
+    ) -> u32;
 }
 
 #[cfg(not(test))]
