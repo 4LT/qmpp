@@ -500,10 +500,7 @@ fn texture_axes_read(
         Alignment::Standard(_) => {
             return qmpp_shared::ERROR_NO_AXES;
         }
-        Alignment::Valve220 {
-            base: _,
-            axes: [u, v],
-        } => [u, v],
+        Alignment::Valve220 { base: _, axes } => axes,
     };
 
     let payload = axes
