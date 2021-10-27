@@ -503,7 +503,7 @@ fn texture_axes_read(
     };
 
     let payload = axes
-        .into_iter()
+        .iter()
         .flat_map(|axis| axis.iter())
         .flat_map(|num| num.to_le_bytes().into_iter())
         .collect::<Vec<u8>>();
