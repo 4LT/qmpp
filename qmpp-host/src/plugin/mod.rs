@@ -1,4 +1,6 @@
+#[macro_use]
 mod common;
+
 mod init;
 mod process;
 
