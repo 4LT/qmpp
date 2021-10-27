@@ -5,7 +5,6 @@ use wasmer::WasmerEnv;
 
 use wasmer::{Memory, MemoryView};
 
-#[macro_export]
 macro_rules! abort_plugin {
     ( $fmt:literal $(, $( $arg:expr ),* )? ) => {
         {
@@ -18,18 +17,12 @@ macro_rules! abort_plugin {
     };
 }
 
-#[macro_export]
 macro_rules! stub_error {
     ( $fun:expr, $ctx:expr ) => {
-        $crate::abort_plugin!(
-            "\"{}\" not implemented for context \"{}\"",
-            $fun,
-            $ctx
-        )
+        abort_plugin!("\"{}\" not implemented for context \"{}\"", $fun, $ctx)
     };
 }
 
-#[macro_export]
 macro_rules! stub_import {
     (
         $fun:expr,
@@ -39,7 +32,7 @@ macro_rules! stub_import {
     ) => {
         {
             |$(_:$arg),*| $( $( -> $ret )? )? {
-                $crate::stub_error!($fun, $ctx)
+                stub_error!($fun, $ctx)
             }
         }
     };
@@ -51,7 +44,7 @@ macro_rules! stub_import {
     ) => {
         {
             |_:$arg| $( $( -> $ret )? )? {
-                $crate::stub_error!($fun, $ctx)
+                stub_error!($fun, $ctx)
             }
         }
     };

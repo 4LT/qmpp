@@ -3,7 +3,6 @@ use wasmer::{
 };
 
 use super::common::{log_error, log_info, recv_bytes, PluginEnv};
-use crate::{abort_plugin, stub_import};
 
 #[derive(WasmerEnv, Clone)]
 struct InitEnv {

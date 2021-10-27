@@ -12,7 +12,6 @@ use quake_util::qmap::{Alignment, Brush, Entity, QuakeMap, Surface};
 use super::common::{
     log_error, log_info, recv_c_string, send_bytes, PluginEnv,
 };
-use crate::{abort_plugin, stub_import};
 
 #[derive(WasmerEnv, Clone)]
 struct ProcessEnv {
