@@ -457,7 +457,7 @@ fn texture_alignment_read(
 
     let alignment = match &surface.alignment {
         Alignment::Standard(align) => align,
-        Alignment::Valve220 { base, axes: _ } => base,
+        Alignment::Valve220(base, _) => base,
     };
 
     let payload = alignment
@@ -499,7 +499,7 @@ fn texture_axes_read(
         Alignment::Standard(_) => {
             return qmpp_shared::ERROR_NO_AXES;
         }
-        Alignment::Valve220 { base: _, axes } => axes,
+        Alignment::Valve220(_, axes) => axes,
     };
 
     let payload = axes
