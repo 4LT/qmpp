@@ -1,5 +1,6 @@
 [workspace]
 members = ["qmpp-host", "qmpp-hello-plugin", "qmpp-shared"]
+resolver = "2"
 
 [patch.crates-io]
 quake-util = { path = "../quake-util" }

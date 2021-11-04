@@ -1,3 +1,4 @@
+use qmpp_shared::LowApiCode;
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -194,13 +195,13 @@ fn keyvalue_init_read(
     ehandle: u32,
     key_ptr: u32,
     size_ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
+        None => return LowApiCode::EntityLookupError,
     };
 
     let key = match recv_c_string(mem, key_ptr) {
@@ -213,7 +214,7 @@ fn keyvalue_init_read(
     let value = &match entity.edict().get(&key) {
         Some(v) => v,
         None => {
-            return qmpp_shared::ERROR_KEY_LOOKUP;
+            return LowApiCode::KeyLookupError;
         }
     };
 
@@ -227,7 +228,7 @@ fn keyvalue_init_read(
 
     match send_bytes(mem, size_ptr, &size_bytes) {
         Ok(_) => match kvrt.open(value_bytes) {
-            Ok(_) => qmpp_shared::SUCCESS,
+            Ok(_) => LowApiCode::Success,
             Err(_) => abort_plugin!("Key-value read transaction already open"),
         },
         Err(_) => abort_plugin!("Failed to send size to plugin"),
@@ -253,13 +254,13 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
     }
 }
 
-fn keys_init_read(env: &ProcessEnv, ehandle: u32, size_ptr: u32) -> u32 {
+fn keys_init_read(env: &ProcessEnv, ehandle: u32, size_ptr: u32) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
+        None => return LowApiCode::EntityLookupError,
     };
 
     let keys = entity
@@ -278,7 +279,7 @@ fn keys_init_read(env: &ProcessEnv, ehandle: u32, size_ptr: u32) -> u32 {
 
     match send_bytes(mem, size_ptr, &size_bytes) {
         Ok(_) => match krt.open(keys) {
-            Ok(_) => qmpp_shared::SUCCESS,
+            Ok(_) => LowApiCode::Success,
             Err(_) => abort_plugin!("Keys transaction already open"),
         },
         Err(_) => abort_plugin!("Failed to send size to plugin"),
@@ -304,12 +305,16 @@ fn keys_read(env: &ProcessEnv, keys_ptr: u32) {
     }
 }
 
-fn bhandle_count(env: &ProcessEnv, ehandle: u32, brush_ct_ptr: u32) -> u32 {
+fn bhandle_count(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_ct_ptr: u32,
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => return qmpp_shared::ERROR_ENTITY_LOOKUP,
+        None => return LowApiCode::EntityLookupError,
     };
 
     let brush_ct = match entity {
@@ -320,7 +325,7 @@ fn bhandle_count(env: &ProcessEnv, ehandle: u32, brush_ct_ptr: u32) -> u32 {
     let brush_ct_bytes = brush_ct.to_le_bytes();
 
     match send_bytes(mem, brush_ct_ptr, &brush_ct_bytes) {
-        Ok(_) => qmpp_shared::SUCCESS,
+        Ok(_) => LowApiCode::Success,
         Err(_) => abort_plugin!("Failed to send brush count to plugin"),
     }
 }
@@ -330,7 +335,7 @@ fn shandle_count(
     ehandle: u32,
     brush_idx: u32,
     surface_ct_ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
 
     let brush = match get_brush(env.map.as_ref(), ehandle, brush_idx) {
@@ -344,7 +349,7 @@ fn shandle_count(
     let surf_ct_bytes = surf_ct.to_le_bytes();
 
     match send_bytes(mem, surface_ct_ptr, &surf_ct_bytes) {
-        Ok(_) => qmpp_shared::SUCCESS,
+        Ok(_) => LowApiCode::Success,
         Err(_) => abort_plugin!("Failed to send surface count to plugin"),
     }
 }
@@ -355,7 +360,7 @@ fn texture_init_read(
     brush_idx: u32,
     surface_idx: u32,
     size_ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
@@ -378,7 +383,7 @@ fn texture_init_read(
 
     match send_bytes(mem, size_ptr, &size_bytes) {
         Ok(_) => match trt.open(texture) {
-            Ok(_) => qmpp_shared::SUCCESS,
+            Ok(_) => LowApiCode::Success,
             Err(_) => abort_plugin!("Texture transaction already open"),
         },
         Err(_) => abort_plugin!("Failed to send size to plugin"),
@@ -410,7 +415,7 @@ fn half_space_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
@@ -435,7 +440,7 @@ fn half_space_read(
         )
     }
 
-    qmpp_shared::SUCCESS
+    LowApiCode::Success
 }
 
 fn texture_alignment_read(
@@ -444,7 +449,7 @@ fn texture_alignment_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
@@ -475,7 +480,7 @@ fn texture_alignment_read(
         )
     }
 
-    qmpp_shared::SUCCESS
+    LowApiCode::Success
 }
 
 fn texture_axes_read(
@@ -484,7 +489,7 @@ fn texture_axes_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) -> u32 {
+) -> LowApiCode {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
@@ -497,7 +502,7 @@ fn texture_axes_read(
 
     let axes = match &surface.alignment {
         Alignment::Standard(_) => {
-            return qmpp_shared::ERROR_NO_AXES;
+            return LowApiCode::NoAxesError;
         }
         Alignment::Valve220(_, axes) => axes,
     };
@@ -515,31 +520,31 @@ fn texture_axes_read(
         )
     }
 
-    qmpp_shared::SUCCESS
+    LowApiCode::Success
 }
 
 fn get_brush(
     map: &QuakeMap,
     ehandle: u32,
     brush_idx: u32,
-) -> Result<&Brush, u32> {
+) -> Result<&Brush, LowApiCode> {
     let entity = match map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
         None => {
-            return Err(qmpp_shared::ERROR_ENTITY_LOOKUP);
+            return Err(LowApiCode::EntityLookupError);
         }
     };
 
     let brushes = match entity {
         Entity::Brush(_, brushes) => brushes,
         Entity::Point(_) => {
-            return Err(qmpp_shared::ERROR_ENTITY_TYPE);
+            return Err(LowApiCode::EntityTypeError);
         }
     };
 
     match brushes.get(usize::try_from(brush_idx).unwrap()) {
         Some(b) => Ok(b),
-        None => Err(qmpp_shared::ERROR_BRUSH_LOOKUP),
+        None => Err(LowApiCode::BrushLookupError),
     }
 }
 
@@ -548,11 +553,11 @@ fn get_surface(
     ehandle: u32,
     brush_idx: u32,
     surface_idx: u32,
-) -> Result<&Surface, u32> {
+) -> Result<&Surface, LowApiCode> {
     match get_brush(map, ehandle, brush_idx) {
         Ok(brush) => match brush.get(usize::try_from(surface_idx).unwrap()) {
             Some(s) => Ok(s),
-            None => Err(qmpp_shared::ERROR_SURFACE_LOOKUP),
+            None => Err(LowApiCode::SurfaceLookupError),
         },
         Err(code) => Err(code),
     }
