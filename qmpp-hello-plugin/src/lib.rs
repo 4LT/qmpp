@@ -2,7 +2,6 @@
 #![feature(default_alloc_error_handler)]
 
 extern crate alloc;
-extern crate qmpp_shared;
 extern crate wee_alloc;
 
 use alloc::format;
@@ -10,6 +9,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
+
+use qmpp_shared::LowApiCode;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -45,7 +46,7 @@ pub extern "C" fn QMPP_Hook_process() {
         QMPP_keyvalue_init_read(0u32, key.as_ptr(), value_size.as_mut_ptr())
     };
 
-    if status == qmpp_shared::SUCCESS {
+    if status == LowApiCode::Success {
         let value_size = unsafe { value_size.assume_init() };
         value_buffer.reserve(value_size);
 
@@ -70,8 +71,8 @@ pub extern "C" fn QMPP_Hook_process() {
         }
     } else {
         let mesg = String::from(match status {
-            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
-            qmpp_shared::ERROR_KEY_LOOKUP => "Key not found in entity",
+            LowApiCode::EntityLookupError => "Entity handle not found",
+            LowApiCode::KeyLookupError => "Key not found in entity",
             _ => "Unknown status",
         });
 
@@ -91,7 +92,7 @@ pub extern "C" fn QMPP_Hook_process() {
 
     let status = unsafe { QMPP_keys_init_read(0u32, keys_size.as_mut_ptr()) };
 
-    if status == qmpp_shared::SUCCESS {
+    if status == LowApiCode::Success {
         let keys_size = unsafe { keys_size.assume_init() };
         key_buffer.reserve(keys_size);
 
@@ -118,7 +119,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status == qmpp_shared::SUCCESS {
+            if status == LowApiCode::Success {
                 let value_size = unsafe { value_size.assume_init() };
                 value_buffer.reserve(value_size);
 
@@ -147,7 +148,7 @@ pub extern "C" fn QMPP_Hook_process() {
         });
     } else {
         let mesg = String::from(match status {
-            qmpp_shared::ERROR_ENTITY_LOOKUP => "Entity handle not found",
+            LowApiCode::EntityLookupError => "Entity handle not found",
             _ => "Unknown status",
         });
 
@@ -166,7 +167,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 QMPP_bhandle_count(ehandle, ent_brush_ct.as_mut_ptr())
             };
 
-            if status == qmpp_shared::SUCCESS {
+            if status == LowApiCode::Success {
                 let ent_brush_ct = unsafe { ent_brush_ct.assume_init() };
 
                 let ent_surface_ct = (0..ent_brush_ct)
@@ -181,7 +182,7 @@ pub extern "C" fn QMPP_Hook_process() {
                             )
                         };
 
-                        if status == qmpp_shared::SUCCESS {
+                        if status == LowApiCode::Success {
                             unsafe { brush_surface_ct.assume_init() }
                         } else {
                             0
@@ -228,7 +229,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status == qmpp_shared::SUCCESS {
+            if status == LowApiCode::Success {
                 let classname_size = unsafe { classname_size.assume_init() };
 
                 classname.reserve(classname_size);
@@ -249,7 +250,7 @@ pub extern "C" fn QMPP_Hook_process() {
             let status =
                 unsafe { QMPP_bhandle_count(ehandle, bhandle_ct.as_mut_ptr()) };
 
-            if status == qmpp_shared::SUCCESS {
+            if status == LowApiCode::Success {
                 Some((ehandle, unsafe { bhandle_ct.assume_init() }))
             } else {
                 None
@@ -265,7 +266,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 QMPP_shandle_count(ehandle, b_idx, shandle_ct.as_mut_ptr())
             };
 
-            if status == qmpp_shared::SUCCESS {
+            if status == LowApiCode::Success {
                 Some((ehandle, b_idx, unsafe { shandle_ct.assume_init() }))
             } else {
                 None
@@ -290,7 +291,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status != qmpp_shared::SUCCESS {
+            if status != LowApiCode::Success {
                 return None;
             }
 
@@ -312,7 +313,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status != qmpp_shared::SUCCESS {
+            if status != LowApiCode::Success {
                 return None;
             }
 
@@ -327,7 +328,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 )
             };
 
-            if status != qmpp_shared::SUCCESS {
+            if status != LowApiCode::Success {
                 return None;
             }
 
@@ -337,12 +338,12 @@ pub extern "C" fn QMPP_Hook_process() {
                 QMPP_texture_axes_read(ehandle, b_idx, s_idx, axes.as_mut_ptr())
             };
 
-            let axes = if status == qmpp_shared::SUCCESS {
-                Some(unsafe { axes.assume_init() })
-            } else if status == qmpp_shared::ERROR_NO_AXES {
-                None
-            } else {
-                return None;
+            let axes = match status {
+                LowApiCode::Success => Some(unsafe { axes.assume_init() }),
+                LowApiCode::NoAxesError => None,
+                _ => {
+                    return None;
+                }
             };
 
             Some((
@@ -408,52 +409,66 @@ extern "C" {
     pub fn QMPP_log_info(mesg_len: usize, mesg_ptr: *const u8);
     pub fn QMPP_log_error(mesg_len: usize, mesg_ptr: *const u8);
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_keyvalue_init_read(
         ehandle: u32,
         key_ptr: *const u8,
         size_ptr: *mut usize,
-    ) -> u32;
+    ) -> LowApiCode;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    pub fn QMPP_keys_init_read(ehandle: u32, size_ptr: *mut usize) -> u32;
+    #[allow(improper_ctypes)]
+    pub fn QMPP_keys_init_read(
+        ehandle: u32,
+        size_ptr: *mut usize,
+    ) -> LowApiCode;
     pub fn QMPP_keys_read(keys_ptr: *mut u8);
 
-    pub fn QMPP_bhandle_count(ehandle: u32, brush_ct_ptr: *mut u32) -> u32;
+    #[allow(improper_ctypes)]
+    pub fn QMPP_bhandle_count(
+        ehandle: u32,
+        brush_ct_ptr: *mut u32,
+    ) -> LowApiCode;
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_shandle_count(
         ehandle: u32,
         brush_idx: u32,
         surface_ct_ptr: *mut u32,
-    ) -> u32;
+    ) -> LowApiCode;
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_texture_init_read(
         ehandle: u32,
         brush_idx: u32,
         surface_idx: u32,
         size_ptr: *mut usize,
-    ) -> u32;
+    ) -> LowApiCode;
     pub fn QMPP_texture_read(texture_ptr: *mut u8);
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_half_space_read(
         ehandle: u32,
         brush_idx: u32,
         surface_idx: u32,
         ptr: *mut HalfSpace,
-    ) -> u32;
+    ) -> LowApiCode;
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_texture_alignment_read(
         ehandle: u32,
         brush_idx: u32,
         surface_idx: u32,
         ptr: *mut Alignment,
-    ) -> u32;
+    ) -> LowApiCode;
 
+    #[allow(improper_ctypes)]
     pub fn QMPP_texture_axes_read(
         ehandle: u32,
         brush_idx: u32,
         surface_idx: u32,
         ptr: *mut [Vec3; 2],
-    ) -> u32;
+    ) -> LowApiCode;
 }
 
 #[cfg(not(test))]
