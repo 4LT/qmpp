@@ -1,0 +1,20 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "qmpp-high-api"
+version = "0.1.0"
+authors = ["seth <rader.seth@gmail.com>"]
+edition = "2021"
+forced-target = "wasm32-unknown-unknown"
+
+[lib]
+name = "hello"
+
+[dependencies]
+wee_alloc = "^0.4"
+qmpp-shared = "^0.1.0"
+hashbrown = "^0.11"
+cstr_core = { version = "^0.2", features = ["alloc"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+quake-util = { version = "^0.1", default-features = false, features = ["alloc_fills"] }
