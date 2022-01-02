@@ -98,11 +98,9 @@ pub extern "C" fn QMPP_Hook_process() {
 
         unsafe { QMPP_keys_read(key_buffer.as_mut_ptr()) };
 
-        unsafe { key_buffer.set_len(keys_size) };
+        unsafe { key_buffer.set_len(keys_size - 1) };
 
-        let keys = key_buffer[..]
-            .split(|&ch| ch == 0u8)
-            .filter(|slice| !slice.is_empty());
+        let keys = key_buffer[..].split(|&ch| ch == 0u8);
 
         keys.for_each(|key| {
             let key_c_str =
@@ -402,14 +400,13 @@ pub extern "C" fn QMPP_Hook_process() {
         });
 }
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, improper_ctypes)]
 extern "C" {
     pub fn QMPP_register(name_len: usize, name_ptr: *const u8);
     pub fn QMPP_ehandle_count() -> u32;
     pub fn QMPP_log_info(mesg_len: usize, mesg_ptr: *const u8);
     pub fn QMPP_log_error(mesg_len: usize, mesg_ptr: *const u8);
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_keyvalue_init_read(
         ehandle: u32,
         key_ptr: *const u8,
@@ -417,27 +414,23 @@ extern "C" {
     ) -> LowApiCode;
     pub fn QMPP_keyvalue_read(val_ptr: *mut u8);
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_keys_init_read(
         ehandle: u32,
         size_ptr: *mut usize,
     ) -> LowApiCode;
     pub fn QMPP_keys_read(keys_ptr: *mut u8);
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_bhandle_count(
         ehandle: u32,
         brush_ct_ptr: *mut u32,
     ) -> LowApiCode;
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_shandle_count(
         ehandle: u32,
         brush_idx: u32,
         surface_ct_ptr: *mut u32,
     ) -> LowApiCode;
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_texture_init_read(
         ehandle: u32,
         brush_idx: u32,
@@ -446,7 +439,6 @@ extern "C" {
     ) -> LowApiCode;
     pub fn QMPP_texture_read(texture_ptr: *mut u8);
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_half_space_read(
         ehandle: u32,
         brush_idx: u32,
@@ -454,7 +446,6 @@ extern "C" {
         ptr: *mut HalfSpace,
     ) -> LowApiCode;
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_texture_alignment_read(
         ehandle: u32,
         brush_idx: u32,
@@ -462,7 +453,6 @@ extern "C" {
         ptr: *mut Alignment,
     ) -> LowApiCode;
 
-    #[allow(improper_ctypes)]
     pub fn QMPP_texture_axes_read(
         ehandle: u32,
         brush_idx: u32,
