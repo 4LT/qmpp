@@ -196,16 +196,14 @@ pub extern "C" fn QMPP_Hook_process() {
                 false
             }
         })
-        .map(|ehandle| {
+        .flat_map(|ehandle| {
             let bhandle_ct = unsafe { QMPP_bhandle_count(ehandle) };
             (0..bhandle_ct).map(move |b_idx| (ehandle, b_idx))
         })
-        .flatten()
-        .map(|(ehandle, b_idx)| {
+        .flat_map(|(ehandle, b_idx)| {
             let shandle_ct = unsafe { QMPP_shandle_count(ehandle, b_idx) };
             (0..shandle_ct).map(move |s_idx| (ehandle, b_idx, s_idx))
         })
-        .flatten()
         .map(|(ehandle, b_idx, s_idx)| {
             let mut texture = Vec::<u8>::new();
             let mut half_space = MaybeUninit::<HalfSpace>::uninit();
