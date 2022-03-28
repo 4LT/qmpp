@@ -9,4 +9,3 @@ edition = "2021"
 [dependencies]
 wasmer = "^2.0"
 quake-util = "^0.1"
-qmpp-shared = { version = "^0.1" }

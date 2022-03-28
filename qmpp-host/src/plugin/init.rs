@@ -50,6 +50,35 @@ pub fn init(module: &Module) {
                 module.store(),
                 stub_import!("QMPP_entity_count", "init", (), u32)
             ),
+
+            "QMPP_entity_exists" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_entity_exists",
+                    "init",
+                    u32,
+                    u32
+                )
+            ),
+            "QMPP_brush_exists" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_brush_exists",
+                    "init",
+                    (u32, u32),
+                    u32
+                )
+            ),
+            "QMPP_surface_exists" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_surface_exists",
+                    "init",
+                    (u32, u32, u32),
+                    u32
+                )
+            ),
+
             "QMPP_keyvalue_init_read" => Function::new_native(
                 module.store(),
                 stub_import!(
@@ -72,7 +101,7 @@ pub fn init(module: &Module) {
                 stub_import!(
                     "QMPP_keys_init_read",
                     "init",
-                    (u32, u32),
+                    u32,
                     u32,
                 )
             ),
@@ -89,7 +118,7 @@ pub fn init(module: &Module) {
                 stub_import!(
                     "QMPP_bhandle_count",
                     "init",
-                    (u32, u32),
+                    u32,
                     u32,
                 )
             ),
@@ -98,7 +127,7 @@ pub fn init(module: &Module) {
                 stub_import!(
                     "QMPP_shandle_count",
                     "init",
-                    (u32, u32, u32),
+                    (u32, u32),
                     u32
                 )
             ),
@@ -108,7 +137,7 @@ pub fn init(module: &Module) {
                 stub_import!(
                     "QMPP_texture_init_read",
                     "init",
-                    (u32, u32, u32, u32),
+                    (u32, u32, u32),
                     u32
                 )
             ),
@@ -127,7 +156,6 @@ pub fn init(module: &Module) {
                     "QMPP_half_space_read",
                     "init",
                     (u32, u32, u32, u32),
-                    u32
                 )
             ),
 
@@ -137,6 +165,15 @@ pub fn init(module: &Module) {
                     "QMPP_texture_alignment_read",
                     "init",
                     (u32, u32, u32, u32),
+                )
+            ),
+
+            "QMPP_texture_alignment_is_valve" => Function::new_native(
+                module.store(),
+                stub_import!(
+                    "QMPP_texture_alignment_is_valve",
+                    "init",
+                    (u32, u32, u32),
                     u32
                 )
             ),
@@ -147,9 +184,8 @@ pub fn init(module: &Module) {
                     "QMPP_texture_axes_read",
                     "init",
                     (u32, u32, u32, u32),
-                    u32
                 )
-            )
+            ),
         }
     };
 

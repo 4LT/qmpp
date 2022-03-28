@@ -521,7 +521,6 @@ dependencies = [
 name = "qmpp-hello-plugin"
 version = "0.1.0"
 dependencies = [
- "qmpp-shared",
  "wee_alloc",
 ]
 
@@ -529,15 +528,7 @@ dependencies = [
 name = "qmpp-host"
 version = "0.1.0"
 dependencies = [
- "qmpp-shared",
  "quake-util",
- "wasmer",
-]
-
-[[package]]
-name = "qmpp-shared"
-version = "0.1.0"
-dependencies = [
  "wasmer",
 ]
 
