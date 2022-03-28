@@ -13,4 +13,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wee_alloc = "^0.4"
-qmpp-shared = "^0.1.0"
