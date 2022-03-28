@@ -201,14 +201,12 @@ pub extern "C" fn QMPP_Hook_process() {
             (0..bhandle_ct).map(move |b_idx| (ehandle, b_idx))
         })
         .flatten()
-        .filter_map(|(ehandle, b_idx)| {
+        .map(|(ehandle, b_idx)| {
             let shandle_ct = unsafe { QMPP_shandle_count(ehandle, b_idx) };
-            Some((ehandle, b_idx, shandle_ct))
-        })
-        .flat_map(|(ehandle, b_idx, shandle_ct)| {
             (0..shandle_ct).map(move |s_idx| (ehandle, b_idx, s_idx))
         })
-        .filter_map(|(ehandle, b_idx, s_idx)| {
+        .flatten()
+        .map(|(ehandle, b_idx, s_idx)| {
             let mut texture = Vec::<u8>::new();
             let mut half_space = MaybeUninit::<HalfSpace>::uninit();
             let mut alignment = MaybeUninit::<Alignment>::uninit();
@@ -265,7 +263,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 None
             };
 
-            Some((
+            (
                 half_space,
                 String::from_utf8(
                     texture.into_iter().take_while(|&ch| ch != 0u8).collect(),
@@ -273,7 +271,7 @@ pub extern "C" fn QMPP_Hook_process() {
                 .unwrap(),
                 alignment,
                 axes,
-            ))
+            )
         })
         .for_each(|(half_space, texture, alignment, axes)| {
             let mut points = half_space
