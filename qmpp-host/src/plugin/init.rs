@@ -2,7 +2,9 @@ use wasmer::{
     imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
 };
 
-use super::common::{log_error, log_info, recv_bytes, PluginEnv};
+use super::common::{
+    error_with_message, log_error, log_info, recv_bytes, ImportError, PluginEnv,
+};
 
 #[derive(WasmerEnv, Clone)]
 struct InitEnv {
@@ -94,6 +96,7 @@ pub fn init(module: &Module) {
                     "QMPP_keyvalue_read",
                     "init",
                     u32,
+                    (),
                 )
             ),
             "QMPP_keys_init_read" => Function::new_native(
@@ -111,6 +114,7 @@ pub fn init(module: &Module) {
                     "QMPP_keys_read",
                     "init",
                     u32,
+                    (),
                 )
             ),
             "QMPP_bhandle_count" => Function::new_native(
@@ -147,6 +151,7 @@ pub fn init(module: &Module) {
                     "QMPP_texture_read",
                     "init",
                     u32,
+                    (),
                 )
             ),
 
@@ -156,6 +161,7 @@ pub fn init(module: &Module) {
                     "QMPP_half_space_read",
                     "init",
                     (u32, u32, u32, u32),
+                    (),
                 )
             ),
 
@@ -165,6 +171,7 @@ pub fn init(module: &Module) {
                     "QMPP_texture_alignment_read",
                     "init",
                     (u32, u32, u32, u32),
+                    (),
                 )
             ),
 
@@ -184,6 +191,7 @@ pub fn init(module: &Module) {
                     "QMPP_texture_axes_read",
                     "init",
                     (u32, u32, u32, u32),
+                    (),
                 )
             ),
         }
@@ -195,14 +203,21 @@ pub fn init(module: &Module) {
     init_export.call(&[]).unwrap();
 }
 
-fn register(env: &InitEnv, name_len: u32, name_ptr: u32) {
+fn register(
+    env: &InitEnv,
+    name_len: u32,
+    name_ptr: u32,
+) -> Result<(), ImportError> {
     match recv_bytes(env.memory.get_ref().unwrap(), name_len, name_ptr) {
         Result::Ok(bytes) => match String::from_utf8(bytes) {
             Result::Ok(plugin_name) => {
-                println!("Registered plugin '{}'", plugin_name,)
+                println!("Registered plugin '{}'", plugin_name,);
+                Ok(())
             }
-            Result::Err(_) => abort_plugin!("Invalid UTF-8 in plugin name"),
+            Result::Err(_) => {
+                error_with_message("Invalid UTF-8 in plugin name")
+            }
         },
-        Result::Err(_) => abort_plugin!("Error while receiving bytes"),
+        Result::Err(_) => error_with_message("Error while receiving bytes"),
     }
 }

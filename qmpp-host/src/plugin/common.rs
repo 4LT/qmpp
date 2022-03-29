@@ -5,21 +5,12 @@ use wasmer::WasmerEnv;
 
 use wasmer::{Memory, MemoryView};
 
-macro_rules! abort_plugin {
-    ( $fmt:literal $(, $( $arg:expr ),* )? ) => {
-        {
-            wasmer::RuntimeError::raise(
-                $crate::plugin::common::ImportError::boxed(
-                    format!($fmt $(, $( $arg ),* )?)
-                )
-            )
-        }
-    };
-}
-
-macro_rules! stub_error {
+macro_rules! stub_err {
     ( $fun:expr, $ctx:expr ) => {
-        abort_plugin!("\"{}\" not implemented for context \"{}\"", $fun, $ctx)
+        $crate::plugin::common::error_with_message(format!(
+            "\"{}\" not implemented for context \"{}\"",
+            $fun, $ctx
+        ))
     };
 }
 
@@ -27,24 +18,30 @@ macro_rules! stub_import {
     (
         $fun:expr,
         $ctx:expr,
-        ( $( $arg:ty ),* )
-        $(, $( $ret:ty $(,)? )? )?
+        ( $( $arg:ty ),* ),
+        $ret:ty $(,)?
     ) => {
         {
-            |$(_:$arg),*| $( $( -> $ret )? )? {
-                stub_error!($fun, $ctx)
+            |$(_:$arg),*| -> core::result::Result<
+                $ret,
+                $crate::plugin::common::ImportError
+            > {
+                stub_err!($fun, $ctx)
             }
         }
     };
     (
         $fun:expr,
         $ctx:expr,
-        $arg:ty
-        $(, $( $ret:ty $(,)? )? )?
+        $arg:ty,
+        $ret:ty $(,)?
     ) => {
         {
-            |_:$arg| $( $( -> $ret )? )? {
-                stub_error!($fun, $ctx)
+            |_:$arg| -> core::result::Result<
+                $ret,
+                $crate::plugin::common::ImportError
+            > {
+                stub_err!($fun, $ctx)
             }
         }
     };
@@ -65,6 +62,10 @@ pub fn stub_import<'a, A, R, S: Display>(
 }
 */
 
+pub fn error_with_message<T>(msg: impl Display) -> Result<T, ImportError> {
+    Err(ImportError::new(msg))
+}
+
 pub trait PluginEnv: WasmerEnv + Clone {
     fn memory(&self) -> &Memory;
     fn plugin_name(&self) -> &str;
@@ -84,10 +85,6 @@ impl ImportError {
         Self {
             msg: format!("{}", msg),
         }
-    }
-
-    pub fn boxed(msg: impl Display) -> Box<Self> {
-        Box::new(Self::new(msg))
     }
 }
 

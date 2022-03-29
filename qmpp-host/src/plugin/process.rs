@@ -10,7 +10,8 @@ use wasmer::{
 use quake_util::qmap::{Alignment, Brush, Entity, QuakeMap, Surface};
 
 use super::common::{
-    log_error, log_info, recv_c_string, send_bytes, PluginEnv,
+    error_with_message, log_error, log_info, recv_c_string, send_bytes,
+    ImportError, PluginEnv,
 };
 
 enum LookupFailure {
@@ -106,7 +107,8 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
                 stub_import!(
                     "QMPP_register",
                     "process",
-                    (u32, u32)
+                    (u32, u32),
+                    ()
                 )
             ),
 
@@ -219,11 +221,11 @@ pub fn process(module: &Module, map: Arc<QuakeMap>) {
     process.call(&[]).unwrap();
 }
 
-fn ehandle_count(env: &ProcessEnv) -> u32 {
+fn ehandle_count(env: &ProcessEnv) -> Result<u32, ImportError> {
     if let Ok(ct) = env.map.entities.len().try_into() {
-        ct
+        Ok(ct)
     } else {
-        abort_plugin!("Too many entities (> ~4B)");
+        error_with_message("Too many entities (> ~4B)")
     }
 }
 
@@ -232,27 +234,29 @@ fn keyvalue_init_read(
     ehandle: u32,
     key_ptr: u32,
     size_ptr: u32,
-) -> u32 {
+) -> Result<u32, ImportError> {
     let mem = env.memory.get_ref().unwrap();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
     let idx = usize::try_from(ehandle).unwrap();
     let entity = match env.map.entities.get(idx) {
         Some(ent) => ent,
-        None => abort_plugin!("Bad entity index {}", idx),
+        None => {
+            return error_with_message(format!("Bad entity index {}", idx));
+        }
     };
 
     let key = match recv_c_string(mem, key_ptr) {
         Ok(key) => key,
         Err(_) => {
-            abort_plugin!("Key pointer out of bounds");
+            return error_with_message("Key pointer out of bounds");
         }
     };
 
     let value = &match entity.edict().get(&key) {
         Some(v) => v,
         None => {
-            return 0u32;
+            return Ok(0u32);
         }
     };
 
@@ -260,44 +264,52 @@ fn keyvalue_init_read(
     let size_bytes = match u32::try_from(value_bytes.len()) {
         Ok(size) => size.to_le_bytes(),
         Err(_) => {
-            abort_plugin!("Attempt to send too many bytes to plugin");
+            return error_with_message(
+                "Attempt to send too many bytes to plugin",
+            );
         }
     };
 
     match send_bytes(mem, size_ptr, &size_bytes) {
         Ok(_) => match kvrt.open(value_bytes) {
-            Ok(_) => 1u32,
-            Err(_) => abort_plugin!("Key-value read transaction already open"),
+            Ok(_) => Ok(1u32),
+            Err(_) => {
+                error_with_message("Key-value read transaction already open")
+            }
         },
-        Err(_) => abort_plugin!("Failed to send size to plugin"),
+        Err(_) => error_with_message("Failed to send size to plugin"),
     }
 }
 
-fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) {
+fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
     let payload = match kvrt.close() {
         Ok(value_vec) => value_vec,
         Err(_) => {
-            abort_plugin!("Key-value read transaction is closed");
+            return error_with_message("Key-value read transaction is closed");
         }
     };
 
     if send_bytes(mem, val_ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send value with {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
-fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> u32 {
+fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
     let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
         Some(ent) => ent,
-        None => abort_plugin!("Failed to look up entity"),
+        None => {
+            return error_with_message("Failed to look up entity");
+        }
     };
 
     let keys = entity
@@ -310,66 +322,83 @@ fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> u32 {
     let key_count = keys.len().try_into().unwrap();
 
     match krt.open(keys) {
-        Ok(_) => key_count,
-        Err(_) => abort_plugin!("Keys transaction already open"),
+        Ok(_) => Ok(key_count),
+        Err(_) => error_with_message("Keys transaction already open"),
     }
 }
 
-fn keys_read(env: &ProcessEnv, keys_ptr: u32) {
+fn keys_read(env: &ProcessEnv, keys_ptr: u32) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
     let payload = match krt.close() {
         Ok(keys) => keys,
         Err(_) => {
-            abort_plugin!("Keys read transaction is closed")
+            return error_with_message("Keys read transaction is closed");
         }
     };
 
     if send_bytes(mem, keys_ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send keys in {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
-fn bhandle_count(env: &ProcessEnv, ehandle: u32) -> u32 {
+fn bhandle_count(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
     let entity_idx = usize::try_from(ehandle).unwrap();
     let entity = match env.map.entities.get(entity_idx) {
         Some(ent) => ent,
-        None => abort_plugin!("Bad entity index {}", entity_idx),
+        None => {
+            return error_with_message(format!(
+                "Bad entity index {}",
+                entity_idx
+            ));
+        }
     };
 
     match entity {
-        Entity::Brush(_, brushes) => brushes.len().try_into().unwrap(),
-        Entity::Point(_) => 0u32,
+        Entity::Brush(_, brushes) => Ok(brushes.len().try_into().unwrap()),
+        Entity::Point(_) => Ok(0u32),
     }
 }
 
-fn shandle_count(env: &ProcessEnv, ehandle: u32, brush_idx: u32) -> u32 {
+fn shandle_count(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+) -> Result<u32, ImportError> {
     let brush = match get_brush(env.map.as_ref(), ehandle, brush_idx) {
         Ok(b) => b,
-        Err(failure) => abort_plugin!("{}", failure.message()),
+        Err(failure) => {
+            return error_with_message(failure.message());
+        }
     };
 
-    brush.len().try_into().unwrap()
+    Ok(brush.len().try_into().unwrap())
 }
 
-fn entity_exists(env: &ProcessEnv, ehandle: u32) -> u32 {
-    if ehandle < ehandle_count(env) {
+fn entity_exists(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
+    Ok(if ehandle < ehandle_count(env)? {
         1u32
     } else {
         0u32
-    }
+    })
 }
 
-fn brush_exists(env: &ProcessEnv, ehandle: u32, brush_idx: u32) -> u32 {
-    if brush_idx < bhandle_count(env, ehandle) {
+fn brush_exists(
+    env: &ProcessEnv,
+    ehandle: u32,
+    brush_idx: u32,
+) -> Result<u32, ImportError> {
+    Ok(if brush_idx < bhandle_count(env, ehandle)? {
         1u32
     } else {
         0u32
-    }
+    })
 }
 
 fn surface_exists(
@@ -377,12 +406,12 @@ fn surface_exists(
     ehandle: u32,
     brush_idx: u32,
     surface_idx: u32,
-) -> u32 {
-    if surface_idx < shandle_count(env, ehandle, brush_idx) {
+) -> Result<u32, ImportError> {
+    Ok(if surface_idx < shandle_count(env, ehandle, brush_idx)? {
         1u32
     } else {
         0u32
-    }
+    })
 }
 
 fn texture_init_read(
@@ -390,14 +419,14 @@ fn texture_init_read(
     ehandle: u32,
     brush_idx: u32,
     surface_idx: u32,
-) -> u32 {
+) -> Result<u32, ImportError> {
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
     let surface =
         match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
             Ok(s) => s,
             Err(failure) => {
-                abort_plugin!("{}", failure.message())
+                return error_with_message(failure.message());
             }
         };
 
@@ -406,27 +435,29 @@ fn texture_init_read(
     let texture_length = texture.len().try_into().unwrap();
 
     match trt.open(texture) {
-        Ok(_) => texture_length,
-        Err(_) => abort_plugin!("Texture transaction already open"),
+        Ok(_) => Ok(texture_length),
+        Err(_) => error_with_message("Texture transaction already open"),
     }
 }
 
-fn texture_read(env: &ProcessEnv, texture_ptr: u32) {
+fn texture_read(env: &ProcessEnv, texture_ptr: u32) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
     let payload = match trt.close() {
         Ok(texture) => texture,
         Err(_) => {
-            abort_plugin!("Texture read transaction is closed")
+            return error_with_message("Texture read transaction is closed");
         }
     };
 
     if send_bytes(mem, texture_ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send texture in {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -436,14 +467,14 @@ fn half_space_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) {
+) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
         match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
             Ok(s) => s,
             Err(code) => {
-                abort_plugin!("{}", code.message());
+                return error_with_message(code.message());
             }
         };
 
@@ -455,10 +486,12 @@ fn half_space_read(
         .collect::<Vec<u8>>();
 
     if send_bytes(mem, ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send half-space in {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -468,14 +501,14 @@ fn texture_alignment_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) {
+) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
         match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
             Ok(s) => s,
             Err(code) => {
-                abort_plugin!("{}", code.message())
+                return error_with_message(code.message());
             }
         };
 
@@ -493,10 +526,12 @@ fn texture_alignment_read(
         .collect::<Vec<u8>>();
 
     if send_bytes(mem, ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send alignment in {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -505,17 +540,19 @@ fn texture_alignment_is_valve(
     ehandle: u32,
     brush_idx: u32,
     surface_idx: u32,
-) -> u32 {
+) -> Result<u32, ImportError> {
     let surface =
         match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
             Ok(s) => s,
-            Err(failure) => abort_plugin!("{}", failure.message()),
+            Err(failure) => {
+                return error_with_message(failure.message());
+            }
         };
 
-    match &surface.alignment {
+    Ok(match &surface.alignment {
         Alignment::Standard(_) => 0u32,
         Alignment::Valve220(_, _) => 1u32,
-    }
+    })
 }
 
 fn texture_axes_read(
@@ -524,20 +561,20 @@ fn texture_axes_read(
     brush_idx: u32,
     surface_idx: u32,
     ptr: u32,
-) {
+) -> Result<(), ImportError> {
     let mem = env.memory.get_ref().unwrap();
 
     let surface =
         match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
             Ok(s) => s,
             Err(failure) => {
-                abort_plugin!("{}", failure.message());
+                return error_with_message(failure.message());
             }
         };
 
     let axes = match &surface.alignment {
         Alignment::Standard(_) => {
-            abort_plugin!("No axes on Standard-style surface");
+            return error_with_message("No axes on Standard-style surface");
         }
         Alignment::Valve220(_, axes) => axes,
     };
@@ -549,10 +586,12 @@ fn texture_axes_read(
         .collect::<Vec<u8>>();
 
     if send_bytes(mem, ptr, &payload[..]).is_err() {
-        abort_plugin!(
+        error_with_message(format!(
             "Failed to send axes in {} bytes to plugin",
             payload.len()
-        )
+        ))
+    } else {
+        Ok(())
     }
 }
 
