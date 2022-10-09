@@ -5,7 +5,7 @@ name = "qmpp-hello-plugin"
 version = "0.1.0"
 authors = ["seth <rader.seth@gmail.com>"]
 edition = "2021"
-forced-target = "wasm32-unknown-unknown"
+default-target = "wasm32-unknown-unknown"
 
 [lib]
 name = "hello"

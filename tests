@@ -1,0 +1,18 @@
+#!/bin/sh
+
+DIRS=`ls -1p | grep /\$`
+LOCAL_TARGET=`rustc -vV | grep ^host: | cut -d' ' -f2`
+
+for dir in $DIRS; do
+    if [ -e "$dir"Cargo.toml ]; then
+        cd $dir
+
+        if !(cargo test --target=$LOCAL_TARGET); then
+            exit 1
+        fi
+
+        cd ..
+    fi
+done
+
+exit 0
