@@ -7,7 +7,7 @@ use wasmer::{
     imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
 };
 
-use quake_util::qmap::{Alignment, Brush, Entity, QuakeMap, Surface};
+use quake_util::qmap::{Brush, QuakeMap, Surface};
 
 use super::common::{
     error_with_message, log_error, log_info, recv_c_string, send_bytes,
@@ -253,7 +253,7 @@ fn keyvalue_init_read(
         }
     };
 
-    let value = &match entity.edict().get(&key) {
+    let value = &match entity.edict.get(&key) {
         Some(v) => v,
         None => {
             return Ok(0u32);
@@ -312,8 +312,7 @@ fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
         }
     };
 
-    let keys = entity
-        .edict()
+    let keys = entity.edict
         .keys()
         .flat_map(|key| key.as_bytes_with_nul().iter())
         .copied()
@@ -360,10 +359,7 @@ fn bhandle_count(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
         }
     };
 
-    match entity {
-        Entity::Brush(_, brushes) => Ok(brushes.len().try_into().unwrap()),
-        Entity::Point(_) => Ok(0u32),
-    }
+    Ok(entity.brushes.len().try_into().unwrap())
 }
 
 fn shandle_count(
@@ -512,10 +508,7 @@ fn texture_alignment_read(
             }
         };
 
-    let alignment = match &surface.alignment {
-        Alignment::Standard(align) => align,
-        Alignment::Valve220(base, _) => base,
-    };
+    let alignment = &surface.alignment;
 
     let payload = alignment
         .offset
@@ -549,9 +542,9 @@ fn texture_alignment_is_valve(
             }
         };
 
-    Ok(match &surface.alignment {
-        Alignment::Standard(_) => 0u32,
-        Alignment::Valve220(_, _) => 1u32,
+    Ok(match &surface.alignment.axes {
+        None => 0u32,
+        _ => 1u32,
     })
 }
 
@@ -572,11 +565,11 @@ fn texture_axes_read(
             }
         };
 
-    let axes = match &surface.alignment {
-        Alignment::Standard(_) => {
+    let axes = match &surface.alignment.axes {
+        None => {
             return error_with_message("No axes on Standard-style surface");
         }
-        Alignment::Valve220(_, axes) => axes,
+        Some(axes) => axes,
     };
 
     let payload = axes
@@ -607,12 +600,7 @@ fn get_brush(
         }
     };
 
-    let brushes = match entity {
-        Entity::Brush(_, brushes) => brushes,
-        Entity::Point(_) => {
-            return Err(LookupFailure::Brush(brush_idx));
-        }
-    };
+    let brushes = &entity.brushes;
 
     match brushes.get(usize::try_from(brush_idx).unwrap()) {
         Some(b) => Ok(b),

@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(default_alloc_error_handler)]
 
 #[cfg(not(test))]
 use core::panic::PanicInfo;
