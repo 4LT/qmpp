@@ -1,223 +1,146 @@
-use wasmer::{
-    imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
-};
+use wasmtime::{Caller, Engine, Linker, Module, Store};
 
-use super::common::{
-    error_with_message, log_error, log_info, recv_bytes, ImportError, PluginEnv,
-};
+use super::common::{log_error, log_info, recv_bytes, PluginEnv};
 
-#[derive(WasmerEnv, Clone)]
+#[derive(Clone)]
 struct InitEnv {
     plugin_name: String,
-
-    #[wasmer(export)]
-    memory: LazyInit<Memory>,
 }
 
 impl PluginEnv for InitEnv {
-    fn memory(&self) -> &Memory {
-        self.memory.get_ref().unwrap()
-    }
-
     fn plugin_name(&self) -> &str {
         &self.plugin_name
     }
 }
 
-pub fn init(module: &Module) {
+pub fn init(engine: &Engine, module: &Module) {
     let init_env = InitEnv {
         plugin_name: String::from("hello"),
-        memory: LazyInit::new(),
     };
 
-    let import_object = imports! {
-        "env" => {
-            "QMPP_register" => Function::new_native_with_env(
-                module.store(),
-                init_env.clone(),
-                register
-            ),
-            "QMPP_log_info" => Function::new_native_with_env(
-                module.store(),
-                init_env.clone(),
-                log_info
-            ),
-            "QMPP_log_error" => Function::new_native_with_env(
-                module.store(),
-                init_env,
-                log_error
-            ),
+    let mut store = Store::new(engine, init_env);
+    let mut linker = Linker::new(engine);
 
-            "QMPP_ehandle_count" => Function::new_native(
-                module.store(),
-                stub_import!("QMPP_entity_count", "init", (), u32)
-            ),
+    linker.func_wrap("env", "QMPP_register", register).unwrap();
 
-            "QMPP_entity_exists" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_entity_exists",
-                    "init",
-                    u32,
-                    u32
-                )
-            ),
-            "QMPP_brush_exists" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_brush_exists",
-                    "init",
-                    (u32, u32),
-                    u32
-                )
-            ),
-            "QMPP_surface_exists" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_surface_exists",
-                    "init",
-                    (u32, u32, u32),
-                    u32
-                )
-            ),
+    linker.func_wrap("env", "QMPP_log_info", log_info).unwrap();
 
-            "QMPP_keyvalue_init_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_keyvalue_init_read",
-                     "init",
-                     (u32, u32, u32),
-                     u32,
-                )
-            ),
-            "QMPP_keyvalue_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_keyvalue_read",
-                    "init",
-                    u32,
-                    (),
-                )
-            ),
-            "QMPP_keys_init_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_keys_init_read",
-                    "init",
-                    u32,
-                    u32,
-                )
-            ),
-            "QMPP_keys_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_keys_read",
-                    "init",
-                    u32,
-                    (),
-                )
-            ),
-            "QMPP_bhandle_count" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_bhandle_count",
-                    "init",
-                    u32,
-                    u32,
-                )
-            ),
-            "QMPP_shandle_count" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_shandle_count",
-                    "init",
-                    (u32, u32),
-                    u32
-                )
-            ),
+    linker
+        .func_wrap("env", "QMPP_log_error", log_error)
+        .unwrap();
 
-            "QMPP_texture_init_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_texture_init_read",
-                    "init",
-                    (u32, u32, u32),
-                    u32
-                )
-            ),
-            "QMPP_texture_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_texture_read",
-                    "init",
-                    u32,
-                    (),
-                )
-            ),
+    stub_func!(linker, "env", "init", "QMPP_entity_exists", i32, i32,).unwrap();
 
-            "QMPP_half_space_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_half_space_read",
-                    "init",
-                    (u32, u32, u32, u32),
-                    (),
-                )
-            ),
+    stub_func!(linker, "env", "init", "QMPP_brush_exists", (i32, i32), i32,)
+        .unwrap();
 
-            "QMPP_texture_alignment_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_texture_alignment_read",
-                    "init",
-                    (u32, u32, u32, u32),
-                    (),
-                )
-            ),
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_surface_exists",
+        (i32, i32, i32),
+        i32
+    )
+    .unwrap();
 
-            "QMPP_texture_alignment_is_valve" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_texture_alignment_is_valve",
-                    "init",
-                    (u32, u32, u32),
-                    u32
-                )
-            ),
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_keyvalue_init_read",
+        (i32, i32, i32),
+        i32,
+    )
+    .unwrap();
 
-            "QMPP_texture_axes_read" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_texture_axes_read",
-                    "init",
-                    (u32, u32, u32, u32),
-                    (),
-                )
-            ),
-        }
-    };
+    stub_func!(linker, "env", "init", "QMPP_keyvalue_read", i32, (),).unwrap();
 
-    let instance = Instance::new(module, &import_object).unwrap();
+    stub_func!(linker, "env", "init", "QMPP_keys_init_read", i32, i32,)
+        .unwrap();
 
-    let init_export = instance.exports.get_function("QMPP_Hook_init").unwrap();
-    init_export.call(&[]).unwrap();
+    stub_func!(linker, "env", "init", "QMPP_keys_read", i32, (),).unwrap();
+
+    stub_func!(linker, "env", "init", "QMPP_ehandle_count", (), i32,).unwrap();
+
+    stub_func!(linker, "env", "init", "QMPP_bhandle_count", i32, i32,).unwrap();
+
+    stub_func!(linker, "env", "init", "QMPP_shandle_count", (i32, i32), i32,)
+        .unwrap();
+
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_texture_init_read",
+        (i32, i32, i32),
+        i32,
+    )
+    .unwrap();
+
+    stub_func!(linker, "env", "init", "QMPP_texture_read", i32, (),).unwrap();
+
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_half_space_read",
+        (i32, i32, i32, i32),
+        (),
+    )
+    .unwrap();
+
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_texture_alignment_read",
+        (i32, i32, i32, i32),
+        (),
+    )
+    .unwrap();
+
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_texture_alignment_is_valve",
+        (i32, i32, i32),
+        i32,
+    )
+    .unwrap();
+
+    stub_func!(
+        linker,
+        "env",
+        "init",
+        "QMPP_texture_axes_read",
+        (i32, i32, i32, i32),
+        (),
+    )
+    .unwrap();
+
+    let instance = linker.instantiate(&mut store, module).unwrap();
+
+    let init_func = instance.get_func(&mut store, "QMPP_Hook_init").unwrap();
+    init_func.call(&mut store, &[], &mut []).unwrap();
 }
 
 fn register(
-    env: &InitEnv,
-    name_len: u32,
-    name_ptr: u32,
-) -> Result<(), ImportError> {
-    match recv_bytes(env.memory.get_ref().unwrap(), name_len, name_ptr) {
+    mut caller: Caller<'_, InitEnv>,
+    name_len: i32,
+    name_ptr: i32,
+) -> anyhow::Result<()> {
+    match recv_bytes(&mut caller, name_len, name_ptr) {
         Result::Ok(bytes) => match String::from_utf8(bytes) {
             Result::Ok(plugin_name) => {
                 println!("Registered plugin '{}'", plugin_name,);
                 Ok(())
             }
             Result::Err(_) => {
-                error_with_message("Invalid UTF-8 in plugin name")
+                Err(anyhow::anyhow!("Invalid UTF-8 in plugin name"))
             }
         },
-        Result::Err(_) => error_with_message("Error while receiving bytes"),
+        Result::Err(_) => Err(anyhow::anyhow!("Invalid UTF-8 in plugin name")),
     }
 }

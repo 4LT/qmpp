@@ -3,40 +3,18 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use wasmer::{
-    imports, Function, Instance, LazyInit, Memory, Module, WasmerEnv,
-};
-
 use quake_util::qmap::{Brush, QuakeMap, Surface};
 
+use wasmtime::{Caller, Engine, Linker, Module, Store};
+
 use super::common::{
-    error_with_message, log_error, log_info, recv_c_string, send_bytes,
-    ImportError, PluginEnv,
+    log_error, log_info, native_to_wasm_size, recv_c_string, send_bytes,
+    wasm_to_native_size, PluginEnv,
 };
 
-enum LookupFailure {
-    Entity(u32),
-    Brush(u32),
-    Surface(u32),
-}
-
-impl LookupFailure {
-    pub fn message(&self) -> String {
-        match self {
-            LookupFailure::Entity(idx) => format!("Bad entity index {}", idx),
-            LookupFailure::Brush(idx) => format!("Bad brush index {}", idx),
-            LookupFailure::Surface(idx) => format!("Bad surface index {}", idx),
-        }
-    }
-}
-
-#[derive(WasmerEnv, Clone)]
+#[derive(Clone)]
 struct ProcessEnv {
     plugin_name: String,
-
-    #[wasmer(export)]
-    memory: LazyInit<Memory>,
-
     map: Arc<QuakeMap>,
     keyvalue_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
     keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
@@ -44,10 +22,6 @@ struct ProcessEnv {
 }
 
 impl PluginEnv for ProcessEnv {
-    fn memory(&self) -> &Memory {
-        self.memory.get_ref().unwrap()
-    }
-
     fn plugin_name(&self) -> &str {
         &self.plugin_name
     }
@@ -90,173 +64,135 @@ impl<T> Transaction<T> {
     }
 }
 
-pub fn process(module: &Module, map: Arc<QuakeMap>) {
+pub fn process(engine: &Engine, module: &Module, map: Arc<QuakeMap>) {
     let process_env = ProcessEnv {
         plugin_name: String::from("hello"),
-        memory: LazyInit::new(),
         map,
         keyvalue_read_transaction: Arc::new(Mutex::new(Transaction::new())),
         keys_read_transaction: Arc::new(Mutex::new(Transaction::new())),
         texture_read_transaction: Arc::new(Mutex::new(Transaction::new())),
     };
 
-    let import_object = imports! {
-        "env" => {
-            "QMPP_register" => Function::new_native(
-                module.store(),
-                stub_import!(
-                    "QMPP_register",
-                    "process",
-                    (u32, u32),
-                    ()
-                )
-            ),
+    let mut store = Store::new(engine, process_env);
+    let mut linker = Linker::new(engine);
 
-            "QMPP_log_info" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                log_info
-            ),
-            "QMPP_log_error" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                log_error
-            ),
+    stub_func!(linker, "env", "process", "QMPP_register", (i32, i32), (),)
+        .unwrap();
 
+    linker.func_wrap("env", "QMPP_log_info", log_info).unwrap();
 
-            "QMPP_ehandle_count" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                ehandle_count
-            ),
-            "QMPP_bhandle_count" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                bhandle_count
-            ),
-            "QMPP_shandle_count" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                shandle_count
-            ),
+    linker
+        .func_wrap("env", "QMPP_log_error", log_error)
+        .unwrap();
 
-            "QMPP_entity_exists" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                entity_exists
-            ),
-            "QMPP_brush_exists" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                brush_exists
-            ),
-            "QMPP_surface_exists" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                surface_exists
-            ),
+    linker
+        .func_wrap("env", "QMPP_ehandle_count", ehandle_count)
+        .unwrap();
 
-            "QMPP_keyvalue_init_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                keyvalue_init_read
-            ),
-            "QMPP_keyvalue_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                keyvalue_read
-            ),
+    linker
+        .func_wrap("env", "QMPP_bhandle_count", bhandle_count)
+        .unwrap();
 
-            "QMPP_keys_init_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                keys_init_read,
-            ),
-            "QMPP_keys_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                keys_read,
-            ),
+    linker
+        .func_wrap("env", "QMPP_shandle_count", shandle_count)
+        .unwrap();
 
-            "QMPP_texture_init_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                texture_init_read,
-            ),
-            "QMPP_texture_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                texture_read,
-            ),
+    linker
+        .func_wrap("env", "QMPP_entity_exists", entity_exists)
+        .unwrap();
 
-            "QMPP_half_space_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                half_space_read
-            ),
+    linker
+        .func_wrap("env", "QMPP_brush_exists", brush_exists)
+        .unwrap();
 
-            "QMPP_texture_alignment_read" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                texture_alignment_read
-            ),
+    linker
+        .func_wrap("env", "QMPP_surface_exists", surface_exists)
+        .unwrap();
 
-            "QMPP_texture_alignment_is_valve" => Function::new_native_with_env(
-                module.store(),
-                process_env.clone(),
-                texture_alignment_is_valve
-            ),
+    linker
+        .func_wrap("env", "QMPP_keyvalue_init_read", keyvalue_init_read)
+        .unwrap();
 
-            "QMPP_texture_axes_read" => Function::new_native_with_env(
-                module.store(),
-                process_env,
-                texture_axes_read
-            )
-        }
-    };
+    linker
+        .func_wrap("env", "QMPP_keyvalue_read", keyvalue_read)
+        .unwrap();
 
-    let instance = Instance::new(module, &import_object).unwrap();
+    linker
+        .func_wrap("env", "QMPP_keys_init_read", keys_init_read)
+        .unwrap();
 
-    let process = instance.exports.get_function("QMPP_Hook_process").unwrap();
-    process.call(&[]).unwrap();
+    linker
+        .func_wrap("env", "QMPP_keys_read", keys_read)
+        .unwrap();
+
+    linker
+        .func_wrap("env", "QMPP_texture_init_read", texture_init_read)
+        .unwrap();
+
+    linker
+        .func_wrap("env", "QMPP_texture_read", texture_read)
+        .unwrap();
+
+    linker
+        .func_wrap("env", "QMPP_half_space_read", half_space_read)
+        .unwrap();
+
+    linker
+        .func_wrap("env", "QMPP_texture_alignment_read", texture_alignment_read)
+        .unwrap();
+
+    linker
+        .func_wrap(
+            "env",
+            "QMPP_texture_alignment_is_valve",
+            texture_alignment_is_valve,
+        )
+        .unwrap();
+
+    linker
+        .func_wrap("env", "QMPP_texture_axes_read", texture_axes_read)
+        .unwrap();
+
+    let instance = linker.instantiate(&mut store, module).unwrap();
+
+    let process_func =
+        instance.get_func(&mut store, "QMPP_Hook_process").unwrap();
+    process_func.call(&mut store, &[], &mut []).unwrap();
 }
 
-fn ehandle_count(env: &ProcessEnv) -> Result<u32, ImportError> {
-    if let Ok(ct) = env.map.entities.len().try_into() {
-        Ok(ct)
-    } else {
-        error_with_message("Too many entities (> ~4B)")
-    }
+fn ehandle_count(caller: Caller<'_, ProcessEnv>) -> anyhow::Result<i32> {
+    let env = caller.data();
+    native_to_wasm_size(env.map.entities.len())
 }
 
 fn keyvalue_init_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    key_ptr: u32,
-    size_ptr: u32,
-) -> Result<u32, ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+    mut caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    key_ptr: i32,
+    size_ptr: i32,
+) -> anyhow::Result<i32> {
+    let env = caller.data().clone();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
-    let idx = usize::try_from(ehandle).unwrap();
+    let idx = usize::try_from(ehandle as u32).unwrap();
     let entity = match env.map.entities.get(idx) {
         Some(ent) => ent,
         None => {
-            return error_with_message(format!("Bad entity index {}", idx));
+            return Err(anyhow::anyhow!("Bad entity index {}", idx));
         }
     };
 
-    let key = match recv_c_string(mem, key_ptr) {
+    let key = match recv_c_string(&mut caller, key_ptr) {
         Ok(key) => key,
         Err(_) => {
-            return error_with_message("Key pointer out of bounds");
+            return Err(anyhow::anyhow!("Key pointer out of bounds"));
         }
     };
 
     let value = &match entity.edict.get(&key) {
         Some(v) => v,
         None => {
-            return Ok(0u32);
+            return Ok(0i32);
         }
     };
 
@@ -264,36 +200,36 @@ fn keyvalue_init_read(
     let size_bytes = match u32::try_from(value_bytes.len()) {
         Ok(size) => size.to_le_bytes(),
         Err(_) => {
-            return error_with_message(
-                "Attempt to send too many bytes to plugin",
-            );
+            return Err(anyhow::anyhow!(
+                "Attempted to send too many bytes to plugin",
+            ));
         }
     };
 
-    match send_bytes(mem, size_ptr, &size_bytes) {
+    match send_bytes(&mut caller, size_ptr, &size_bytes) {
         Ok(_) => match kvrt.open(value_bytes) {
-            Ok(_) => Ok(1u32),
+            Ok(_) => Ok(1i32),
             Err(_) => {
-                error_with_message("Key-value read transaction already open")
+                Err(anyhow::anyhow!("Key-value read transaction already open"))
             }
         },
-        Err(_) => error_with_message("Failed to send size to plugin"),
+        Err(_) => Err(anyhow::anyhow!("Failed to send size to plugin")),
     }
 }
 
-fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+fn keyvalue_read(
+    mut caller: Caller<'_, ProcessEnv>,
+    val_ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data().clone();
     let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
 
-    let payload = match kvrt.close() {
-        Ok(value_vec) => value_vec,
-        Err(_) => {
-            return error_with_message("Key-value read transaction is closed");
-        }
-    };
+    let payload = kvrt
+        .close()
+        .map_err(|_| anyhow::anyhow!("Key-value read transaction is closed"))?;
 
-    if send_bytes(mem, val_ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, val_ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send value with {} bytes to plugin",
             payload.len()
         ))
@@ -302,17 +238,22 @@ fn keyvalue_read(env: &ProcessEnv, val_ptr: u32) -> Result<(), ImportError> {
     }
 }
 
-fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
+fn keys_init_read(
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+) -> anyhow::Result<i32> {
+    let env = caller.data();
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
-    let entity = match env.map.entities.get(usize::try_from(ehandle).unwrap()) {
+    let entity = match env.map.entities.get(wasm_to_native_size(ehandle)) {
         Some(ent) => ent,
         None => {
-            return error_with_message("Failed to look up entity");
+            return Err(anyhow::anyhow!("Failed to look up entity"));
         }
     };
 
-    let keys = entity.edict
+    let keys = entity
+        .edict
         .keys()
         .flat_map(|key| key.as_bytes_with_nul().iter())
         .copied()
@@ -322,23 +263,23 @@ fn keys_init_read(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
 
     match krt.open(keys) {
         Ok(_) => Ok(key_count),
-        Err(_) => error_with_message("Keys transaction already open"),
+        Err(_) => Err(anyhow::anyhow!("Keys transaction already open")),
     }
 }
 
-fn keys_read(env: &ProcessEnv, keys_ptr: u32) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+fn keys_read(
+    mut caller: Caller<'_, ProcessEnv>,
+    keys_ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data().clone();
     let mut krt = env.keys_read_transaction.lock().unwrap();
 
-    let payload = match krt.close() {
-        Ok(keys) => keys,
-        Err(_) => {
-            return error_with_message("Keys read transaction is closed");
-        }
-    };
+    let payload = krt
+        .close()
+        .map_err(|_| anyhow::anyhow!("Keys read transaction is closed"))?;
 
-    if send_bytes(mem, keys_ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, keys_ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send keys in {} bytes to plugin",
             payload.len()
         ))
@@ -347,84 +288,86 @@ fn keys_read(env: &ProcessEnv, keys_ptr: u32) -> Result<(), ImportError> {
     }
 }
 
-fn bhandle_count(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
-    let entity_idx = usize::try_from(ehandle).unwrap();
+fn bhandle_count(
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+) -> anyhow::Result<i32> {
+    let entity_idx = usize::try_from(ehandle as u32).unwrap();
+    let env = caller.data();
+
     let entity = match env.map.entities.get(entity_idx) {
         Some(ent) => ent,
         None => {
-            return error_with_message(format!(
-                "Bad entity index {}",
-                entity_idx
-            ));
+            return Err(anyhow::anyhow!("Bad entity index {}", entity_idx));
         }
     };
 
-    Ok(entity.brushes.len().try_into().unwrap())
+    native_to_wasm_size(entity.brushes.len())
 }
 
 fn shandle_count(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-) -> Result<u32, ImportError> {
-    let brush = match get_brush(env.map.as_ref(), ehandle, brush_idx) {
-        Ok(b) => b,
-        Err(failure) => {
-            return error_with_message(failure.message());
-        }
-    };
-
-    Ok(brush.len().try_into().unwrap())
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+) -> anyhow::Result<i32> {
+    let env = caller.data();
+    let brush = get_brush(env.map.as_ref(), ehandle, brush_idx)?;
+    native_to_wasm_size(brush.len())
 }
 
-fn entity_exists(env: &ProcessEnv, ehandle: u32) -> Result<u32, ImportError> {
-    Ok(if ehandle < ehandle_count(env)? {
-        1u32
+fn entity_exists(
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+) -> anyhow::Result<i32> {
+    Ok(if ehandle < ehandle_count(caller)? {
+        1i32
     } else {
-        0u32
+        0i32
     })
 }
 
 fn brush_exists(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-) -> Result<u32, ImportError> {
-    Ok(if brush_idx < bhandle_count(env, ehandle)? {
-        1u32
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+) -> anyhow::Result<i32> {
+    let brush_idx = brush_idx as u32;
+
+    Ok(if brush_idx < bhandle_count(caller, ehandle)? as u32 {
+        1i32
     } else {
-        0u32
+        0i32
     })
 }
 
 fn surface_exists(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-) -> Result<u32, ImportError> {
-    Ok(if surface_idx < shandle_count(env, ehandle, brush_idx)? {
-        1u32
-    } else {
-        0u32
-    })
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+) -> anyhow::Result<i32> {
+    let surface_idx = surface_idx as u32;
+
+    Ok(
+        if surface_idx < shandle_count(caller, ehandle, brush_idx)? as u32 {
+            1i32
+        } else {
+            0i32
+        },
+    )
 }
 
 fn texture_init_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-) -> Result<u32, ImportError> {
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+) -> anyhow::Result<i32> {
+    let env = caller.data();
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
     let surface =
-        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
-            Ok(s) => s,
-            Err(failure) => {
-                return error_with_message(failure.message());
-            }
-        };
+        get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
 
     let texture = surface.texture.as_bytes_with_nul().to_vec();
 
@@ -432,23 +375,26 @@ fn texture_init_read(
 
     match trt.open(texture) {
         Ok(_) => Ok(texture_length),
-        Err(_) => error_with_message("Texture transaction already open"),
+        Err(_) => Err(anyhow::anyhow!("Texture transaction already open")),
     }
 }
 
-fn texture_read(env: &ProcessEnv, texture_ptr: u32) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+fn texture_read(
+    mut caller: Caller<'_, ProcessEnv>,
+    texture_ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data().clone();
     let mut trt = env.texture_read_transaction.lock().unwrap();
 
     let payload = match trt.close() {
         Ok(texture) => texture,
         Err(_) => {
-            return error_with_message("Texture read transaction is closed");
+            return Err(anyhow::anyhow!("Texture read transaction is closed"));
         }
     };
 
-    if send_bytes(mem, texture_ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, texture_ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send texture in {} bytes to plugin",
             payload.len()
         ))
@@ -458,21 +404,16 @@ fn texture_read(env: &ProcessEnv, texture_ptr: u32) -> Result<(), ImportError> {
 }
 
 fn half_space_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-    ptr: u32,
-) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+    mut caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+    ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data();
 
     let surface =
-        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
-            Ok(s) => s,
-            Err(code) => {
-                return error_with_message(code.message());
-            }
-        };
+        get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
 
     let payload = surface
         .half_space
@@ -481,8 +422,8 @@ fn half_space_read(
         .flat_map(|num| num.to_le_bytes().into_iter())
         .collect::<Vec<u8>>();
 
-    if send_bytes(mem, ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send half-space in {} bytes to plugin",
             payload.len()
         ))
@@ -492,21 +433,16 @@ fn half_space_read(
 }
 
 fn texture_alignment_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-    ptr: u32,
-) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+    mut caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+    ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data();
 
     let surface =
-        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
-            Ok(s) => s,
-            Err(code) => {
-                return error_with_message(code.message());
-            }
-        };
+        get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
 
     let alignment = &surface.alignment;
 
@@ -518,8 +454,8 @@ fn texture_alignment_read(
         .flat_map(|num| num.to_le_bytes().into_iter())
         .collect::<Vec<u8>>();
 
-    if send_bytes(mem, ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send alignment in {} bytes to plugin",
             payload.len()
         ))
@@ -529,45 +465,37 @@ fn texture_alignment_read(
 }
 
 fn texture_alignment_is_valve(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-) -> Result<u32, ImportError> {
+    caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+) -> anyhow::Result<i32> {
+    let env = caller.data();
+
     let surface =
-        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
-            Ok(s) => s,
-            Err(failure) => {
-                return error_with_message(failure.message());
-            }
-        };
+        get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
 
     Ok(match &surface.alignment.axes {
-        None => 0u32,
-        _ => 1u32,
+        None => 0i32,
+        _ => 1i32,
     })
 }
 
 fn texture_axes_read(
-    env: &ProcessEnv,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-    ptr: u32,
-) -> Result<(), ImportError> {
-    let mem = env.memory.get_ref().unwrap();
+    mut caller: Caller<'_, ProcessEnv>,
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+    ptr: i32,
+) -> anyhow::Result<()> {
+    let env = caller.data();
 
     let surface =
-        match get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx) {
-            Ok(s) => s,
-            Err(failure) => {
-                return error_with_message(failure.message());
-            }
-        };
+        get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
 
     let axes = match &surface.alignment.axes {
         None => {
-            return error_with_message("No axes on Standard-style surface");
+            return Err(anyhow::anyhow!("No axes on Standard-style surface"));
         }
         Some(axes) => axes,
     };
@@ -578,8 +506,8 @@ fn texture_axes_read(
         .flat_map(|num| num.to_le_bytes().into_iter())
         .collect::<Vec<u8>>();
 
-    if send_bytes(mem, ptr, &payload[..]).is_err() {
-        error_with_message(format!(
+    if send_bytes(&mut caller, ptr, &payload[..]).is_err() {
+        Err(anyhow::anyhow!(
             "Failed to send axes in {} bytes to plugin",
             payload.len()
         ))
@@ -590,34 +518,37 @@ fn texture_axes_read(
 
 fn get_brush(
     map: &QuakeMap,
-    ehandle: u32,
-    brush_idx: u32,
-) -> Result<&Brush, LookupFailure> {
-    let entity = match map.entities.get(usize::try_from(ehandle).unwrap()) {
+    ehandle: i32,
+    brush_idx: i32,
+) -> anyhow::Result<&Brush> {
+    let entity = match map.entities.get(wasm_to_native_size(ehandle)) {
         Some(ent) => ent,
         None => {
-            return Err(LookupFailure::Entity(ehandle));
+            return Err(anyhow::anyhow!("Bad entity index {}", ehandle as u32));
         }
     };
 
     let brushes = &entity.brushes;
 
-    match brushes.get(usize::try_from(brush_idx).unwrap()) {
+    match brushes.get(wasm_to_native_size(brush_idx)) {
         Some(b) => Ok(b),
-        None => Err(LookupFailure::Brush(brush_idx)),
+        None => Err(anyhow::anyhow!("Bad brush index {}", brush_idx as u32)),
     }
 }
 
 fn get_surface(
     map: &QuakeMap,
-    ehandle: u32,
-    brush_idx: u32,
-    surface_idx: u32,
-) -> Result<&Surface, LookupFailure> {
+    ehandle: i32,
+    brush_idx: i32,
+    surface_idx: i32,
+) -> anyhow::Result<&Surface> {
     match get_brush(map, ehandle, brush_idx) {
-        Ok(brush) => match brush.get(usize::try_from(surface_idx).unwrap()) {
+        Ok(brush) => match brush.get(wasm_to_native_size(surface_idx)) {
             Some(s) => Ok(s),
-            None => Err(LookupFailure::Surface(surface_idx)),
+            None => Err(anyhow::anyhow!(
+                "Bad surface index {}",
+                surface_idx as u32,
+            )),
         },
         Err(failure) => Err(failure),
     }

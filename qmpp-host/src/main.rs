@@ -4,15 +4,15 @@ use std::sync::Arc;
 
 use quake_util::qmap;
 
-use wasmer::{Module, Store};
+use wasmtime::{Engine, Module};
 
 mod plugin;
 use plugin::{init, process};
 
 fn main() {
-    let store = Store::default();
+    let engine = Engine::default();
     let module = Module::from_file(
-        &store,
+        &engine,
         "target/wasm32-unknown-unknown/release/hello.wasm",
     )
     .unwrap();
@@ -22,6 +22,6 @@ fn main() {
     );
     let map = qmap::parse(reader).unwrap();
 
-    init(&module);
-    process(&module, Arc::new(map));
+    init(&engine, &module);
+    process(&engine, &module, Arc::new(map));
 }
