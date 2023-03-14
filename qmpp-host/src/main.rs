@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use quake_util::qmap;
 
@@ -23,5 +23,5 @@ fn main() {
     let map = qmap::parse(reader).unwrap();
 
     init(&engine, &module);
-    process(&engine, &module, Arc::new(map));
+    process(&engine, &module, Rc::new(map));
 }

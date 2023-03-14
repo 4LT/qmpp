@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use quake_util::qmap::{Brush, QuakeMap, Surface};
 
@@ -15,10 +15,10 @@ use super::common::{
 #[derive(Clone)]
 struct ProcessEnv {
     plugin_name: String,
-    map: Arc<QuakeMap>,
-    keyvalue_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
-    keys_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
-    texture_read_transaction: Arc<Mutex<Transaction<Vec<u8>>>>,
+    map: Rc<QuakeMap>,
+    keyvalue_read_transaction: Rc<RefCell<Transaction<Vec<u8>>>>,
+    keys_read_transaction: Rc<RefCell<Transaction<Vec<u8>>>>,
+    texture_read_transaction: Rc<RefCell<Transaction<Vec<u8>>>>,
 }
 
 impl PluginEnv for ProcessEnv {
@@ -64,13 +64,13 @@ impl<T> Transaction<T> {
     }
 }
 
-pub fn process(engine: &Engine, module: &Module, map: Arc<QuakeMap>) {
+pub fn process(engine: &Engine, module: &Module, map: Rc<QuakeMap>) {
     let process_env = ProcessEnv {
         plugin_name: String::from("hello"),
         map,
-        keyvalue_read_transaction: Arc::new(Mutex::new(Transaction::new())),
-        keys_read_transaction: Arc::new(Mutex::new(Transaction::new())),
-        texture_read_transaction: Arc::new(Mutex::new(Transaction::new())),
+        keyvalue_read_transaction: Rc::new(RefCell::new(Transaction::new())),
+        keys_read_transaction: Rc::new(RefCell::new(Transaction::new())),
+        texture_read_transaction: Rc::new(RefCell::new(Transaction::new())),
     };
 
     let mut store = Store::new(engine, process_env);
@@ -172,7 +172,7 @@ fn keyvalue_init_read(
     size_ptr: i32,
 ) -> anyhow::Result<i32> {
     let env = caller.data().clone();
-    let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
+    let mut kvrt = env.keyvalue_read_transaction.borrow_mut();
 
     let idx = usize::try_from(ehandle as u32).unwrap();
     let entity = match env.map.entities.get(idx) {
@@ -222,7 +222,7 @@ fn keyvalue_read(
     val_ptr: i32,
 ) -> anyhow::Result<()> {
     let env = caller.data().clone();
-    let mut kvrt = env.keyvalue_read_transaction.lock().unwrap();
+    let mut kvrt = env.keyvalue_read_transaction.borrow_mut();
 
     let payload = kvrt
         .close()
@@ -243,7 +243,7 @@ fn keys_init_read(
     ehandle: i32,
 ) -> anyhow::Result<i32> {
     let env = caller.data();
-    let mut krt = env.keys_read_transaction.lock().unwrap();
+    let mut krt = env.keys_read_transaction.borrow_mut();
 
     let entity = match env.map.entities.get(wasm_to_native_size(ehandle)) {
         Some(ent) => ent,
@@ -272,7 +272,7 @@ fn keys_read(
     keys_ptr: i32,
 ) -> anyhow::Result<()> {
     let env = caller.data().clone();
-    let mut krt = env.keys_read_transaction.lock().unwrap();
+    let mut krt = env.keys_read_transaction.borrow_mut();
 
     let payload = krt
         .close()
@@ -364,7 +364,7 @@ fn texture_init_read(
     surface_idx: i32,
 ) -> anyhow::Result<i32> {
     let env = caller.data();
-    let mut trt = env.texture_read_transaction.lock().unwrap();
+    let mut trt = env.texture_read_transaction.borrow_mut();
 
     let surface =
         get_surface(env.map.as_ref(), ehandle, brush_idx, surface_idx)?;
@@ -384,7 +384,7 @@ fn texture_read(
     texture_ptr: i32,
 ) -> anyhow::Result<()> {
     let env = caller.data().clone();
-    let mut trt = env.texture_read_transaction.lock().unwrap();
+    let mut trt = env.texture_read_transaction.borrow_mut();
 
     let payload = match trt.close() {
         Ok(texture) => texture,
