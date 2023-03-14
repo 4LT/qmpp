@@ -6,7 +6,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
-
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
@@ -377,4 +376,3 @@ extern "C" {
         ptr: *mut [Vec3; 2],
     );
 }
-
